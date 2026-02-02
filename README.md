@@ -14,19 +14,22 @@ The name combines:
 
 ```
 $PATH402 protocol
+├── path402.com (official site + docs)
 ├── $pathd (the daemon — any machine can run it)
 ├── path402-mcp-server (the agent tool)  ← YOU ARE HERE
-└── b0ase.com/exchange (the hosted marketplace)
+├── path402.com/exchange (token marketplace)
+└── b0ase.com/exchange (live trading)
 ```
 
-| Component | What it is | Who uses it |
-|-----------|-----------|-------------|
-| **$PATH402** | The protocol (idea, brand, spec) | Everyone |
-| **$pathd** | The daemon (runs on any machine) | Node operators |
-| **path402-mcp-server** | AI agent tools (this package) | AI agents |
-| **b0ase.com/exchange** | Hosted marketplace (easy mode) | End users |
+| Component | What it is | Link |
+|-----------|-----------|------|
+| **$PATH402** | The protocol | [path402.com](https://path402.com) |
+| **Docs** | Full documentation | [path402.com/docs](https://path402.com/docs) |
+| **path402-mcp-server** | AI agent tools | [npm](https://www.npmjs.com/package/path402-mcp-server) |
+| **Exchange** | Token marketplace | [path402.com/exchange](https://path402.com/exchange) |
+| **Live Trading** | Trade real tokens | [b0ase.com/exchange](https://b0ase.com/exchange) |
 
-Learn more: [b0ase.com/exchange](https://b0ase.com/exchange)
+Learn more: [path402.com](https://path402.com)
 
 ## Why AI Agents?
 
@@ -225,8 +228,11 @@ path402-mcp-server/
 
 | Component | Description | Link |
 |-----------|-------------|------|
-| **$pathd** | The daemon that serves $PATH402 content | [github.com/b0ase/pathd](https://github.com/b0ase/pathd) |
-| **Exchange** | Hosted marketplace | [b0ase.com/exchange](https://b0ase.com/exchange) |
+| **path402.com** | Official protocol website | [path402.com](https://path402.com) |
+| **Documentation** | Full docs and guides | [path402.com/docs](https://path402.com/docs) |
+| **Exchange** | Token marketplace | [path402.com/exchange](https://path402.com/exchange) |
+| **$pathd** | The daemon (serves $PATH402 content) | [github.com/b0ase/pathd](https://github.com/b0ase/pathd) |
+| **Live Trading** | Trade real tokens | [b0ase.com/exchange](https://b0ase.com/exchange) |
 
 ## License
 
