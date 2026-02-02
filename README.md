@@ -1,16 +1,19 @@
 # path402-mcp-server
 
-Agent tools for the **$PATH protocol**.
+Agent tools for the **$PATH402 protocol**.
 
-An MCP server that enables AI agents to discover, evaluate, acquire, and serve tokenised content behind `$` addresses. Implements the $402 spec — the HTTP layer of the $PATH protocol.
+An MCP server that enables AI agents to discover, evaluate, acquire, and serve tokenised content behind `$` addresses.
 
-## What is $PATH?
+## What is $PATH402?
 
-$PATH is a protocol that turns any URL path into a priced, tokenised market. Put a `$` in front of a path segment and it becomes an economic object with a price curve, a supply count, holders who serve the content, and revenue that flows to participants.
+$PATH402 is a protocol that turns any URL path into a priced, tokenised market. Put a `$` in front of a path segment and it becomes an economic object with a price curve, a supply count, holders who serve the content, and revenue that flows to participants.
+
+The name combines:
+- **$PATH** — the namespace/directory concept (every `$address` is a path)
+- **402** — HTTP 402 Payment Required (the response that triggers payment)
 
 ```
-$PATH protocol (the idea)
-├── $402 spec (the HTTP response format)
+$PATH402 protocol
 ├── $pathd (the daemon — any machine can run it)
 ├── path402-mcp-server (the agent tool)  ← YOU ARE HERE
 └── b0ase.com/exchange (the hosted marketplace)
@@ -18,8 +21,7 @@ $PATH protocol (the idea)
 
 | Component | What it is | Who uses it |
 |-----------|-----------|-------------|
-| **$PATH** | The protocol (idea, brand, system) | Everyone |
-| **$402** | The HTTP spec (402 response format) | Implementers |
+| **$PATH402** | The protocol (idea, brand, spec) | Everyone |
 | **$pathd** | The daemon (runs on any machine) | Node operators |
 | **path402-mcp-server** | AI agent tools (this package) | AI agents |
 | **b0ase.com/exchange** | Hosted marketplace (easy mode) | End users |
@@ -28,7 +30,7 @@ Learn more: [b0ase.com/exchange](https://b0ase.com/exchange)
 
 ## Why AI Agents?
 
-$PATH was designed with AI agents as **first-class consumers**. Agents don't have micropayment friction — they make cost-driven decisions. When an agent needs information behind a $address, it:
+$PATH402 was designed with AI agents as **first-class consumers**. Agents don't have micropayment friction — they make cost-driven decisions. When an agent needs information behind a $address, it:
 
 1. **Discovers** the price and terms
 2. **Evaluates** whether the ROI makes sense
@@ -55,12 +57,13 @@ Over time, a well-configured agent becomes **self-funding**: the revenue from se
 ## Quick Start
 
 ```bash
-pnpm install
-pnpm run build
-pnpm start          # stdio transport (default)
+npm install path402-mcp-server
+```
 
-# or HTTP transport:
-TRANSPORT=http PORT=3402 pnpm start
+Or run directly:
+
+```bash
+npx path402-mcp-server
 ```
 
 ## Usage with Claude Desktop
@@ -71,8 +74,8 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "path402": {
-      "command": "node",
-      "args": ["/path/to/path402-mcp-server/dist/index.js"]
+      "command": "npx",
+      "args": ["path402-mcp-server"]
     }
   }
 }
@@ -106,7 +109,7 @@ The `path402_economics` tool provides detailed financial analysis:
 ```
 > "Show me the economics of $b0ase.com/$premium/$guide"
 
-## $402 Economics: $b0ase.com/$premium/$guide
+## $PATH402 Economics: $b0ase.com/$premium/$guide
 
 ### Current State
 - Supply: 23 tokens issued
@@ -134,11 +137,11 @@ The `path402_economics` tool provides detailed financial analysis:
 - Your Est. Share: ~31 SAT
 ```
 
-## $402 Protocol Overview
+## $PATH402 Protocol Overview
 
 ### $addresses
 
-Content behind `$` path segments is $402-gated:
+Content behind `$` path segments is $PATH402-gated:
 
 ```
 $b0ase.com                    → site-level token (cheap)
@@ -163,7 +166,7 @@ Each `$` segment is an independent market with its own price and token.
 
 ### The Key Insight
 
-Under square root decay pricing with proportional serving, **every buyer except the last achieves positive ROI**. This is a mathematical property of the curve, not a marketing claim. It's what makes $402 different from a simple paywall.
+Under square root decay pricing with proportional serving, **every buyer except the last achieves positive ROI**. This is a mathematical property of the curve, not a marketing claim. It's what makes $PATH402 different from a simple paywall.
 
 ## Self-Funding Agents
 
@@ -194,7 +197,7 @@ This is possible because sqrt_decay pricing mathematically guarantees positive r
 - ✅ Detailed economics analysis with breakeven and projections
 - ✅ Pricing engine (all four models)
 - ✅ ROI estimation
-- ✅ Mock server for testing without a live $402 endpoint
+- ✅ Mock server for testing without a live $PATH402 endpoint
 - ✅ stdio and HTTP transport
 - 🔲 Real HTTP client (connecting to live $pathd servers)
 - 🔲 HandCash wallet integration (real payments)
@@ -207,12 +210,12 @@ This is possible because sqrt_decay pricing mathematically guarantees positive r
 path402-mcp-server/
 ├── src/
 │   ├── index.ts           # MCP server + tool registration
-│   ├── types.ts           # $402 protocol types
+│   ├── types.ts           # $PATH402 protocol types
 │   ├── constants.ts       # Protocol constants
 │   ├── schemas/
 │   │   └── inputs.ts      # Zod input schemas
 │   └── services/
-│       ├── client.ts      # HTTP client for $402 endpoints
+│       ├── client.ts      # HTTP client for $PATH402 endpoints
 │       ├── pricing.ts     # Price calculation + economics engine
 │       └── wallet.ts      # Token portfolio + budget + serving
 └── dist/                  # Compiled JavaScript
@@ -222,8 +225,7 @@ path402-mcp-server/
 
 | Component | Description | Link |
 |-----------|-------------|------|
-| **$pathd** | The daemon that serves $PATH content | [pathd/](../../pathd/) |
-| **$402 Spec** | Full specification | [docs/PATHD_SPEC.md](../../docs/PATHD_SPEC.md) |
+| **$pathd** | The daemon that serves $PATH402 content | [github.com/b0ase/pathd](https://github.com/b0ase/pathd) |
 | **Exchange** | Hosted marketplace | [b0ase.com/exchange](https://b0ase.com/exchange) |
 
 ## License
