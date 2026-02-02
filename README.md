@@ -1,4 +1,4 @@
-# $PATH402 MCP Server
+# PATH402 MCP Server
 
 > **Turn AI agents into autonomous economic actors.**
 
