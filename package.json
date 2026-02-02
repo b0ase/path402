@@ -1,0 +1,60 @@
+{
+  "name": "path402-mcp-server",
+  "version": "0.2.0",
+  "description": "MCP server for the $PATH protocol — AI agent tools for discovering, evaluating, and acquiring tokenised content via $402",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "path402-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "homepage": "https://b0ase.com/exchange",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b0ase/path402-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/b0ase/path402-mcp-server/issues"
+  },
+  "author": "Richard Boase <hello@b0ase.com>",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "path-protocol",
+    "path402",
+    "402",
+    "micropayments",
+    "tokenised-content",
+    "ai-agents",
+    "bsv",
+    "bitcoin",
+    "claude",
+    "anthropic"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

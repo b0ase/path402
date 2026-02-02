@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output (rebuilt on install via prepublishOnly)
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package manager locks (use npm for publishing)
+pnpm-lock.yaml
+yarn.lock

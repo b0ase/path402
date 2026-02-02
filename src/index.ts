@@ -1,0 +1,926 @@
+/**
+ * $402 MCP Server
+ * 
+ * Enables AI agents to discover, evaluate, acquire, and serve
+ * tokenised content using the $402 protocol.
+ * 
+ * Tools:
+ *   path402_discover    - Probe a $address, get pricing and terms
+ *   path402_evaluate    - Budget check: should the agent buy?
+ *   path402_acquire     - Pay and receive token + content
+ *   path402_wallet      - View token portfolio and balance
+ *   path402_price_schedule - See how price changes with supply
+ *   path402_set_budget  - Set agent's spending budget
+ */
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express from "express";
+
+import {
+  DiscoverInputSchema,
+  EvaluateInputSchema,
+  AcquireInputSchema,
+  WalletStatusInputSchema,
+  PriceScheduleInputSchema,
+  SetBudgetInputSchema,
+  ServeInputSchema,
+  EconomicsInputSchema,
+  BatchDiscoverInputSchema,
+  ServableInputSchema
+} from "./schemas/inputs.js";
+import type {
+  DiscoverInput,
+  EvaluateInput,
+  AcquireInput,
+  WalletStatusInput,
+  PriceScheduleInput,
+  SetBudgetInput,
+  ServeInput,
+  EconomicsInput,
+  BatchDiscoverInput,
+  ServableInput
+} from "./schemas/inputs.js";
+
+import { discover, acquireContent } from "./services/client.js";
+import {
+  generatePriceSchedule,
+  calculatePrice,
+  calculateBreakeven,
+  calculateTotalRevenue,
+  estimateROI,
+  explainEconomics
+} from "./services/pricing.js";
+import {
+  evaluateBudget,
+  recordAcquisition,
+  getWallet,
+  hasToken,
+  getToken,
+  getPortfolioSummary,
+  setBalance,
+  resetWallet,
+  getServableTokens,
+  recordServe,
+  getServeHistory,
+  getServeStats
+} from "./services/wallet.js";
+
+// ── Server Init ─────────────────────────────────────────────────
+
+const server = new McpServer({
+  name: "path402-mcp-server",
+  version: "0.2.0"
+});
+
+// ── Tool: discover ──────────────────────────────────────────────
+
+server.registerTool(
+  "path402_discover",
+  {
+    title: "Discover $402 Content",
+    description: `Probe a $address to discover its $402 pricing terms, revenue model, current supply, and any nested $addresses below it.
+
+Use this before acquiring content to understand what you're buying into. Returns the full $402 response including pricing model, current price, issuer share, and child paths.
+
+Args:
+  - url (string): The $address or URL. Examples: "$b0ase.com/$blog", "https://example.com/$api/$data"
+
+Returns:
+  The $402 discovery response with pricing, revenue rules, supply, and children.
+
+Examples:
+  - "What content is available at $b0ase.com?" → discover $b0ase.com
+  - "How much does this post cost?" → discover the specific $address
+  - "What's nested under this section?" → check children array`,
+    inputSchema: DiscoverInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: DiscoverInput) => {
+    try {
+      const response = await discover(params.url);
+      const owned = hasToken(response.dollarAddress);
+
+      const lines = [
+        `## $402 Discovery: ${response.dollarAddress}`,
+        "",
+        `**Protocol:** ${response.protocol} v${response.version}`,
+        `**Current Price:** ${response.currentPrice} SAT`,
+        `**Current Supply:** ${response.currentSupply} tokens issued`,
+        `**Pricing Model:** ${response.pricing.model} (base: ${response.pricing.basePrice} SAT)`,
+        `**Revenue Model:** ${response.revenue.model} (issuer: ${Math.round(response.revenue.issuerShare * 100)}%)`,
+        `**Payment Address:** ${response.paymentAddress}`,
+        `**Already Owned:** ${owned ? "Yes ✓" : "No"}`,
+      ];
+
+      if (response.contentPreview) {
+        lines.push("", `**Preview:** ${response.contentPreview}`);
+      }
+
+      if (response.children && response.children.length > 0) {
+        lines.push("", "**Nested $addresses:**");
+        for (const child of response.children) {
+          lines.push(`  - ${child}`);
+        }
+      }
+
+      const output = {
+        dollarAddress: response.dollarAddress,
+        protocol: response.protocol,
+        currentPrice: response.currentPrice,
+        currentSupply: response.currentSupply,
+        pricing: response.pricing,
+        revenue: response.revenue,
+        children: response.children ?? [],
+        alreadyOwned: owned,
+        contentPreview: response.contentPreview
+      };
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: output
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Discovery failed: ${msg}. Check the URL is a valid $402 endpoint.` }]
+      };
+    }
+  }
+);
+
+// ── Tool: evaluate ──────────────────────────────────────────────
+
+server.registerTool(
+  "path402_evaluate",
+  {
+    title: "Evaluate $402 Purchase",
+    description: `Evaluate whether to acquire a $402 token. Checks budget, estimates ROI, and returns a recommendation.
+
+This is the agent's decision-making tool. Use it before acquiring to determine if the purchase is worthwhile given the current balance and price.
+
+Args:
+  - url (string): The $address or URL to evaluate
+  - max_price (number): Maximum acceptable price in satoshis (default: 10000)
+
+Returns:
+  Budget decision with recommendation: "acquire", "skip", or "insufficient_funds"`,
+    inputSchema: EvaluateInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: EvaluateInput) => {
+    try {
+      const response = await discover(params.url);
+      const decision = evaluateBudget(response, params.max_price);
+
+      const emoji = decision.recommendation === "acquire" ? "✅"
+        : decision.recommendation === "skip" ? "⏭️"
+        : "❌";
+
+      const lines = [
+        `## ${emoji} Budget Evaluation: ${decision.dollarAddress}`,
+        "",
+        `**Current Price:** ${decision.currentPrice} SAT`,
+        `**Recommendation:** ${decision.recommendation.toUpperCase()}`,
+        `**Reasoning:** ${decision.reasoning}`,
+        `**Budget Remaining:** ${decision.budgetRemaining} SAT`,
+      ];
+
+      if (decision.expectedROI !== undefined) {
+        lines.push(`**Expected ROI:** ${decision.expectedROI}%`);
+      }
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: decision
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Evaluation failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: acquire ───────────────────────────────────────────────
+
+server.registerTool(
+  "path402_acquire",
+  {
+    title: "Acquire $402 Token",
+    description: `Pay for and acquire a $402 token. This debits the agent's balance, stores the token (with serving rights), and returns the gated content.
+
+After acquisition, the agent holds the token and can serve the content to future buyers, earning revenue.
+
+Args:
+  - url (string): The $address or URL to acquire
+  - max_price (number): Maximum price in satoshis. Rejects if current price exceeds this.
+
+Returns:
+  The acquired token details and the unlocked content.
+
+⚠️ This tool spends funds from the agent's wallet balance.`,
+    inputSchema: AcquireInputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: AcquireInput) => {
+    try {
+      // First discover current terms
+      const response = await discover(params.url);
+
+      // Check if already owned
+      if (hasToken(response.dollarAddress)) {
+        return {
+          content: [{ type: "text", text: `Already hold a token for ${response.dollarAddress}. No purchase needed.` }]
+        };
+      }
+
+      // Budget check
+      const decision = evaluateBudget(response, params.max_price);
+      if (decision.recommendation === "insufficient_funds") {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Cannot acquire: ${decision.reasoning}` }]
+        };
+      }
+      if (decision.recommendation === "skip" && response.currentPrice > params.max_price) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Price ${response.currentPrice} SAT exceeds max_price ${params.max_price} SAT. Increase max_price or wait for price to decay.` }]
+        };
+      }
+
+      // Simulate payment (in production: HandCash transaction)
+      const paymentProof = `proof_${Date.now()}`;
+
+      // Record the acquisition
+      const token = recordAcquisition(
+        response.dollarAddress,
+        response.currentPrice,
+        response.currentSupply,
+        response.paymentAddress
+      );
+
+      // Retrieve the content
+      const { content, contentType } = await acquireContent(params.url, paymentProof);
+
+      const wallet = getWallet();
+      const lines = [
+        `## ✅ Token Acquired: ${response.dollarAddress}`,
+        "",
+        `**Token ID:** ${token.id}`,
+        `**Price Paid:** ${token.pricePaid} SAT`,
+        `**Position:** #${token.supply + 1} (supply was ${token.supply})`,
+        `**Serving Rights:** Yes`,
+        `**Wallet Balance:** ${wallet.balance} SAT`,
+        "",
+        "---",
+        "",
+        content
+      ];
+
+      const output = {
+        success: true,
+        token,
+        content,
+        totalCost: token.pricePaid,
+        newBalance: wallet.balance
+      };
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: output
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Acquisition failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: wallet ────────────────────────────────────────────────
+
+server.registerTool(
+  "path402_wallet",
+  {
+    title: "$402 Wallet Status",
+    description: `View the agent's $402 wallet: balance, tokens held, total spent/earned, and net position.
+
+Args:
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  Complete wallet state including all held tokens and financial summary.`,
+    inputSchema: WalletStatusInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: WalletStatusInput) => {
+    const summary = getPortfolioSummary();
+
+    if (params.response_format === "json") {
+      return {
+        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+        structuredContent: summary
+      };
+    }
+
+    const lines = [
+      "## $402 Wallet",
+      "",
+      `**Balance:** ${summary.balance} SAT`,
+      `**Tokens Held:** ${summary.totalTokens}`,
+      `**Total Spent:** ${summary.totalSpent} SAT`,
+      `**Total Earned:** ${summary.totalEarned} SAT`,
+      `**Net Position:** ${summary.netPosition >= 0 ? "+" : ""}${summary.netPosition} SAT`,
+    ];
+
+    if (summary.tokens.length > 0) {
+      lines.push("", "### Token Portfolio");
+      for (const t of summary.tokens) {
+        lines.push(`- **${t.dollarAddress}** — paid ${t.pricePaid} SAT (${t.acquiredAt})`);
+      }
+    } else {
+      lines.push("", "_No tokens held. Use path402_acquire to purchase content._");
+    }
+
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+      structuredContent: summary
+    };
+  }
+);
+
+// ── Tool: price_schedule ────────────────────────────────────────
+
+server.registerTool(
+  "path402_price_schedule",
+  {
+    title: "$402 Price Schedule",
+    description: `Show how the price of a $402 endpoint changes as supply grows. Useful for understanding the pricing curve and optimal buying timing.
+
+Args:
+  - url (string): The $address to analyse
+  - supply_points (number[]): Supply levels to calculate prices at (default: [1,5,10,50,100,500,1000])
+
+Returns:
+  A table showing price at each supply level.`,
+    inputSchema: PriceScheduleInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: PriceScheduleInput) => {
+    try {
+      const response = await discover(params.url);
+      const schedule = generatePriceSchedule(response.pricing, params.supply_points);
+
+      const lines = [
+        `## Price Schedule: ${response.dollarAddress}`,
+        `**Model:** ${response.pricing.model} (base: ${response.pricing.basePrice} SAT)`,
+        `**Current Supply:** ${response.currentSupply}`,
+        "",
+        "| Supply | Price (SAT) |",
+        "|--------|-------------|"
+      ];
+
+      for (const point of schedule) {
+        const marker = point.supply === response.currentSupply ? " ← current" : "";
+        lines.push(`| ${point.supply} | ${point.price}${marker} |`);
+      }
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: { dollarAddress: response.dollarAddress, schedule }
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Price schedule failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: set_budget ────────────────────────────────────────────
+
+server.registerTool(
+  "path402_set_budget",
+  {
+    title: "Set $402 Budget",
+    description: `Set or reset the agent's wallet balance. Use this to configure spending limits.
+
+Args:
+  - balance (number): Wallet balance in satoshis
+
+Returns:
+  Updated wallet state.`,
+    inputSchema: SetBudgetInputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: SetBudgetInput) => {
+    resetWallet(params.balance);
+    const summary = getPortfolioSummary();
+
+    return {
+      content: [{ type: "text", text: `Wallet reset. Balance set to ${params.balance} SAT.` }],
+      structuredContent: summary
+    };
+  }
+);
+
+// ── Tool: serve ──────────────────────────────────────────────────
+
+server.registerTool(
+  "path402_serve",
+  {
+    title: "Serve $402 Content",
+    description: `Serve content for a $address you hold a token for. This simulates serving content to a buyer and earning revenue.
+
+When a buyer requests content you hold, you serve it and earn a share of their payment. This is how agents become self-funding over time.
+
+Args:
+  - url (string): The $address to serve content for (must hold token)
+  - requester (string): Optional identifier for who requested the content
+
+Returns:
+  Confirmation of serve event and revenue earned.
+
+⚠️ You must hold a token for this $address to serve it.`,
+    inputSchema: ServeInputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false
+    }
+  },
+  async (params: ServeInput) => {
+    try {
+      const dollarAddress = params.url.startsWith("$") ? params.url : `$${params.url.replace(/^https?:\/\//, "")}`;
+      const token = getToken(dollarAddress);
+
+      if (!token) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Cannot serve ${dollarAddress}: no token held. Use path402_acquire first.` }]
+        };
+      }
+
+      if (!token.servingRights) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Cannot serve ${dollarAddress}: token does not have serving rights.` }]
+        };
+      }
+
+      // Simulate serving revenue (in production: actual payment from network)
+      // Revenue = fraction of buyer's payment based on serving pool
+      const simulatedRevenue = Math.round(token.pricePaid * 0.1 * Math.random() + 10);
+
+      const event = recordServe(
+        dollarAddress,
+        token.id,
+        simulatedRevenue,
+        params.requester
+      );
+
+      const wallet = getWallet();
+      const history = getServeHistory(dollarAddress);
+
+      const lines = [
+        `## ✅ Content Served: ${dollarAddress}`,
+        "",
+        `**Serve ID:** ${event.id}`,
+        `**Revenue Earned:** ${event.revenueEarned} SAT`,
+        `**Requester:** ${event.requester || "anonymous"}`,
+        `**Token Position:** #${token.supply + 1}`,
+        "",
+        `**Total Serves for This Token:** ${history.length}`,
+        `**Total Revenue from This Token:** ${history.reduce((sum, e) => sum + e.revenueEarned, 0)} SAT`,
+        `**New Wallet Balance:** ${wallet.balance} SAT`
+      ];
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: {
+          event,
+          tokenStats: {
+            serves: history.length,
+            totalRevenue: history.reduce((sum, e) => sum + e.revenueEarned, 0)
+          },
+          newBalance: wallet.balance
+        }
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Serve failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: economics ──────────────────────────────────────────────
+
+server.registerTool(
+  "path402_economics",
+  {
+    title: "$402 Economics Analysis",
+    description: `Deep dive into the economics of a $402 token. Shows breakeven analysis, ROI projections at different supply levels, and the mathematical explanation of why sqrt_decay works.
+
+Use this to understand whether a $address is a good investment, when you'll break even, and how much you can expect to earn.
+
+Args:
+  - url (string): The $address to analyse
+  - projected_supply (number): Expected total supply for ROI calculation (default: 1000)
+  - serving_participation (number): Fraction of holders actively serving (0.01-1.0, default: 0.5)
+
+Returns:
+  Detailed economics analysis including breakeven, ROI projections, and math explanation.`,
+    inputSchema: EconomicsInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: EconomicsInput) => {
+    try {
+      const response = await discover(params.url);
+      const buyerPosition = response.currentSupply + 1;
+      const pricePaid = response.currentPrice;
+
+      // Calculate breakeven
+      const breakeven = calculateBreakeven(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        params.serving_participation
+      );
+
+      // Calculate ROI at different supply levels
+      const roiAtProjected = estimateROI(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        params.projected_supply,
+        params.serving_participation
+      );
+      const roiAt2x = estimateROI(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        response.currentSupply * 2,
+        params.serving_participation
+      );
+      const roiAt10x = estimateROI(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        response.currentSupply * 10,
+        params.serving_participation
+      );
+
+      // Calculate revenue projection
+      const revenueProjection = calculateTotalRevenue(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        params.projected_supply
+      );
+
+      // Your share of network revenue
+      const avgHolders = (buyerPosition + params.projected_supply) / 2;
+      const yourShare = Math.round(revenueProjection.networkRevenue / avgHolders);
+
+      // Math explanation
+      const mathExplanation = explainEconomics(
+        response.pricing,
+        response.revenue,
+        buyerPosition,
+        params.projected_supply
+      );
+
+      const lines = [
+        `## $402 Economics: ${response.dollarAddress}`,
+        "",
+        `### Current State`,
+        `- **Supply:** ${response.currentSupply} tokens issued`,
+        `- **Your Position:** #${buyerPosition} (next buyer)`,
+        `- **Price to Acquire:** ${pricePaid} SAT`,
+        `- **Pricing Model:** ${response.pricing.model}`,
+        `- **Issuer Share:** ${Math.round(response.revenue.issuerShare * 100)}%`,
+        "",
+        `### Breakeven Analysis`,
+        breakeven.buyersNeeded > 0
+          ? `- **Buyers needed to break even:** ${breakeven.buyersNeeded}`
+          : `- **Breakeven:** Not achievable within 100k buyers`,
+        breakeven.supplyAtBreakeven > 0
+          ? `- **Supply at breakeven:** ${breakeven.supplyAtBreakeven}`
+          : "",
+        breakeven.buyersNeeded > 0
+          ? `- **Breakeven probability:** ${breakeven.buyersNeeded < 50 ? "High" : breakeven.buyersNeeded < 200 ? "Medium" : "Low"}`
+          : "",
+        "",
+        `### ROI Projections`,
+        `| Supply Level | ROI |`,
+        `|--------------|-----|`,
+        `| ${response.currentSupply * 2} (2x current) | ${Math.round(roiAt2x * 100)}% |`,
+        `| ${response.currentSupply * 10} (10x current) | ${Math.round(roiAt10x * 100)}% |`,
+        `| ${params.projected_supply} (projected) | ${Math.round(roiAtProjected * 100)}% |`,
+        "",
+        `### Revenue Projection (at ${params.projected_supply} supply)`,
+        `- **Gross Revenue:** ${revenueProjection.grossRevenue} SAT`,
+        `- **Issuer Revenue:** ${revenueProjection.issuerRevenue} SAT`,
+        `- **Network Revenue:** ${revenueProjection.networkRevenue} SAT`,
+        `- **Your Est. Share:** ~${yourShare} SAT`,
+        "",
+        "---",
+        "",
+        mathExplanation
+      ].filter(Boolean);
+
+      const analysis = {
+        dollarAddress: response.dollarAddress,
+        currentSupply: response.currentSupply,
+        currentPrice: pricePaid,
+        projectedSupply: params.projected_supply,
+        buyerPosition,
+        pricePaid,
+        breakeven: {
+          buyersNeeded: breakeven.buyersNeeded,
+          supplyAtBreakeven: breakeven.supplyAtBreakeven,
+          probability: breakeven.buyersNeeded < 50 ? "high" : breakeven.buyersNeeded < 200 ? "medium" : "low"
+        },
+        roi: {
+          atProjectedSupply: Math.round(roiAtProjected * 100),
+          at2xSupply: Math.round(roiAt2x * 100),
+          at10xSupply: Math.round(roiAt10x * 100)
+        },
+        revenueProjection: {
+          ...revenueProjection,
+          yourShare
+        },
+        mathExplanation
+      };
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: analysis
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Economics analysis failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: batch_discover ─────────────────────────────────────────
+
+server.registerTool(
+  "path402_batch_discover",
+  {
+    title: "Batch Discover $402 Content",
+    description: `Discover multiple $addresses at once. More efficient than calling discover individually when exploring a site or comparing options.
+
+Args:
+  - urls (string[]): Array of $addresses to discover (max 10)
+
+Returns:
+  Summary of all discovered $addresses with prices and ownership status.`,
+    inputSchema: BatchDiscoverInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: BatchDiscoverInput) => {
+    const results = {
+      successful: [] as Array<{
+        url: string;
+        dollarAddress: string;
+        currentPrice: number;
+        currentSupply: number;
+        alreadyOwned: boolean;
+      }>,
+      failed: [] as Array<{
+        url: string;
+        error: string;
+      }>
+    };
+
+    // Process all URLs in parallel
+    await Promise.all(
+      params.urls.map(async (url) => {
+        try {
+          const response = await discover(url);
+          const owned = hasToken(response.dollarAddress);
+          results.successful.push({
+            url,
+            dollarAddress: response.dollarAddress,
+            currentPrice: response.currentPrice,
+            currentSupply: response.currentSupply,
+            alreadyOwned: owned
+          });
+        } catch (error) {
+          results.failed.push({
+            url,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      })
+    );
+
+    // Sort by price
+    results.successful.sort((a, b) => a.currentPrice - b.currentPrice);
+
+    const lines = [
+      `## Batch Discovery: ${params.urls.length} URLs`,
+      "",
+      `**Successful:** ${results.successful.length}`,
+      `**Failed:** ${results.failed.length}`,
+      ""
+    ];
+
+    if (results.successful.length > 0) {
+      lines.push("### Results (sorted by price)");
+      lines.push("");
+      lines.push("| $address | Price | Supply | Owned |");
+      lines.push("|----------|-------|--------|-------|");
+      for (const r of results.successful) {
+        lines.push(`| ${r.dollarAddress} | ${r.currentPrice} SAT | ${r.currentSupply} | ${r.alreadyOwned ? "✓" : "✗"} |`);
+      }
+    }
+
+    if (results.failed.length > 0) {
+      lines.push("");
+      lines.push("### Failed");
+      for (const f of results.failed) {
+        lines.push(`- ${f.url}: ${f.error}`);
+      }
+    }
+
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+      structuredContent: results
+    };
+  }
+);
+
+// ── Tool: servable ───────────────────────────────────────────────
+
+server.registerTool(
+  "path402_servable",
+  {
+    title: "List Servable Content",
+    description: `List all $addresses the agent can serve (holds tokens with serving rights). Shows serve history and revenue earned per token.
+
+Args:
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  List of servable content with stats.`,
+    inputSchema: ServableInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: ServableInput) => {
+    const servable = getServableTokens();
+    const stats = getServeStats();
+
+    const statsMap = new Map(stats.map(s => [s.dollarAddress, s]));
+
+    const enriched = servable.map(token => {
+      const tokenStats = statsMap.get(token.dollarAddress);
+      return {
+        dollarAddress: token.dollarAddress,
+        tokenId: token.id,
+        position: token.supply + 1,
+        pricePaid: token.pricePaid,
+        acquiredAt: token.acquiredAt,
+        serves: tokenStats?.serveCount ?? 0,
+        revenueEarned: tokenStats?.totalRevenue ?? 0,
+        roi: tokenStats ? Math.round(((tokenStats.totalRevenue - token.pricePaid) / token.pricePaid) * 100) : -100
+      };
+    });
+
+    if (params.response_format === "json") {
+      return {
+        content: [{ type: "text", text: JSON.stringify(enriched, null, 2) }],
+        structuredContent: { servable: enriched }
+      };
+    }
+
+    const lines = [
+      `## Servable Content`,
+      "",
+      `**Total Tokens with Serving Rights:** ${servable.length}`,
+      ""
+    ];
+
+    if (enriched.length === 0) {
+      lines.push("_No servable tokens. Use path402_acquire to purchase content with serving rights._");
+    } else {
+      lines.push("| $address | Position | Paid | Serves | Revenue | ROI |");
+      lines.push("|----------|----------|------|--------|---------|-----|");
+      for (const e of enriched) {
+        const roiStr = e.roi >= 0 ? `+${e.roi}%` : `${e.roi}%`;
+        lines.push(`| ${e.dollarAddress} | #${e.position} | ${e.pricePaid} SAT | ${e.serves} | ${e.revenueEarned} SAT | ${roiStr} |`);
+      }
+    }
+
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+      structuredContent: { servable: enriched }
+    };
+  }
+);
+
+// ── Transport Setup ─────────────────────────────────────────────
+
+async function runStdio(): Promise<void> {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("$402 MCP server running on stdio");
+}
+
+async function runHTTP(): Promise<void> {
+  const app = express();
+  app.use(express.json());
+
+  app.post("/mcp", async (req, res) => {
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true
+    });
+    res.on("close", () => transport.close());
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  });
+
+  const port = parseInt(process.env.PORT || "3402");
+  app.listen(port, () => {
+    console.error(`$402 MCP server running on http://localhost:${port}/mcp`);
+  });
+}
+
+// Choose transport
+const transport = process.env.TRANSPORT || "stdio";
+if (transport === "http") {
+  runHTTP().catch(error => {
+    console.error("Server error:", error);
+    process.exit(1);
+  });
+} else {
+  runStdio().catch(error => {
+    console.error("Server error:", error);
+    process.exit(1);
+  });
+}
