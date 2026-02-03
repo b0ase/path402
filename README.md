@@ -1,8 +1,10 @@
-# PATH402 MCP Server
+# PATH402 MCP Server + $pathd Daemon
 
-> **Turn AI agents into autonomous economic actors.**
+> **Turn AI agents into autonomous economic actors. Run a $402 network node.**
 
-The PATH402 MCP Server enables AI agents (Claude, GPT, etc.) to discover, evaluate, acquire, and serve tokenized content through the $402 protocol. Agents can operate autonomously, managing budgets, making investment decisions, and earning revenue.
+This package includes:
+- **MCP Server** — AI agent tools for Claude, GPT, etc.
+- **$pathd Daemon** — Index tokens, serve content, earn rewards
 
 [![npm version](https://badge.fury.io/js/path402-mcp-server.svg)](https://www.npmjs.com/package/path402-mcp-server)
 [![License: Open BSV](https://img.shields.io/badge/License-Open%20BSV-blue.svg)](https://github.com/b0ase/path402-mcp-server/blob/main/LICENSE)
@@ -12,8 +14,46 @@ The PATH402 MCP Server enables AI agents (Claude, GPT, etc.) to discover, evalua
 ### Installation
 
 ```bash
-npm install path402-mcp-server
-# or
+npm install -g path402-mcp-server
+```
+
+### Run $pathd Daemon
+
+```bash
+pathd start
+```
+
+This starts a $402 network node that:
+- **INDEX** — Reads BSV blockchain, tracks all $402 tokens
+- **VALIDATE** — Confirms token ownership before serving
+- **SERVE** — Delivers content to verified token holders
+- **EARN** — Receives $402 rewards via PoW20
+
+### $pathd CLI Commands
+
+```bash
+pathd start           # Start the daemon
+pathd status          # Check if running
+pathd stop            # Stop the daemon
+pathd config          # Show configuration
+pathd mine            # Start PoW20 mining (experimental)
+pathd --help          # Full help
+```
+
+### Why Run $pathd?
+
+> **PoW forces operators into the open. Big nodes can't hide.**
+
+The purpose of PoW20 is NOT just to reward work—it's to force operators into visibility:
+- Computational cost → Capital investment → Scale
+- Scale → Physical presence → Regulatory visibility
+- Big nodes must identify themselves
+
+No anonymous propaganda dealers running underground BitTorrent clients with no accountability.
+
+### MCP Server (for AI Agents)
+
+```bash
 npx path402-mcp-server
 ```
 
