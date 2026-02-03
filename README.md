@@ -79,15 +79,15 @@ Add to your `claude_desktop_config.json`:
 ### First Conversation
 
 ```
-You: "Discover what's available at $b0ase.com"
+You: "Discover what's available at $example.com"
 
 Claude: [Uses path402_discover to probe the $address]
         Found 3 nested tokens:
-        - $b0ase.com/$blog (500 sats, 0 supply)
-        - $b0ase.com/$api (1000 sats, 0 supply)
-        - $b0ase.com/$premium (2500 sats, 0 supply)
+        - $example.com/$blog (500 sats, 0 supply)
+        - $example.com/$api (1000 sats, 0 supply)
+        - $example.com/$premium (2500 sats, 0 supply)
 
-You: "Evaluate if $b0ase.com/$blog is worth acquiring"
+You: "Evaluate if $example.com/$blog is worth acquiring"
 
 Claude: [Uses path402_evaluate and path402_economics]
         ROI Analysis:
@@ -99,7 +99,7 @@ Claude: [Uses path402_evaluate and path402_economics]
 You: "Acquire 10 tokens"
 
 Claude: [Uses path402_acquire]
-        Acquired 10 $b0ase.com/$blog tokens
+        Acquired 10 $example.com/$blog tokens
         Total cost: 5,000 sats
         New balance: 10 tokens
 ```
