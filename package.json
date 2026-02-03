@@ -1,12 +1,13 @@
 {
   "name": "path402-mcp-server",
-  "version": "0.2.0",
-  "description": "MCP server for the $PATH protocol — AI agent tools for discovering, evaluating, and acquiring tokenised content via $402",
+  "version": "0.3.0",
+  "description": "MCP server + $pathd daemon for the Path 402 Token Protocol — AI agent tools for discovering, evaluating, and acquiring tokenised content via $402",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "path402-mcp-server": "dist/index.js"
+    "path402-mcp-server": "dist/index.js",
+    "pathd": "dist/pathd/cli.js"
   },
   "files": [
     "dist",
