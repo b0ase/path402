@@ -1,6 +1,6 @@
 {
   "name": "path402-mcp-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server + $pathd daemon for the Path 402 Token Protocol — AI agent tools for discovering, evaluating, and acquiring tokenised content via $402",
   "type": "module",
   "main": "dist/index.js",
