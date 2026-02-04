@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@babbage/sdk": "^0.4.48",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@supabase/supabase-js": "^2.94.0",
     "better-sqlite3": "^11.8.0",
