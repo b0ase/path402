@@ -16,6 +16,7 @@ import {
   PaymentResult
 } from './types.js';
 import { BSVWallet } from './bsv.js';
+import { MetanetWallet } from './metanet.js';
 
 // ── Wallet Manager Implementation ──────────────────────────────────
 
@@ -26,6 +27,14 @@ export class MultiChainWalletManager implements WalletManager {
   constructor() {
     // BSV wallet is always initialized (primary chain)
     this.wallets.set('bsv', new BSVWallet());
+  }
+
+  /**
+   * Switch BSV wallet to Metanet (Babbage)
+   */
+  useMetanet(): void {
+    const metanet = new MetanetWallet();
+    this.addWallet('bsv', metanet);
   }
 
   // ── Wallet Management ──────────────────────────────────────────
@@ -56,7 +65,7 @@ export class MultiChainWalletManager implements WalletManager {
    */
   async connectAll(): Promise<void> {
     await Promise.all(
-      Array.from(this.wallets.values()).map(w => w.connect().catch(() => {}))
+      Array.from(this.wallets.values()).map(w => w.connect().catch(() => { }))
     );
   }
 
@@ -404,9 +413,15 @@ export class MultiChainWalletManager implements WalletManager {
 
 let walletManager: MultiChainWalletManager | null = null;
 
+
 export function getWalletManager(): MultiChainWalletManager {
   if (!walletManager) {
     walletManager = new MultiChainWalletManager();
   }
   return walletManager;
+}
+
+export function useMetanetWallet(): void {
+  const manager = getWalletManager();
+  manager.useMetanet();
 }

@@ -31,7 +31,8 @@ import {
   ServableInputSchema,
   TokenStatsInputSchema,
   HoldersInputSchema,
-  VerifyHolderInputSchema
+  VerifyHolderInputSchema,
+  ConnectWalletInputSchema
 } from "./schemas/inputs.js";
 import type {
   DiscoverInput,
@@ -46,7 +47,8 @@ import type {
   ServableInput,
   TokenStatsInput,
   HoldersInput,
-  VerifyHolderInput
+  VerifyHolderInput,
+  ConnectWalletInput
 } from "./schemas/inputs.js";
 
 import { discover, acquireContent } from "./services/client.js";
@@ -80,6 +82,7 @@ import {
   hasTokens,
   verifyTokenOwnership
 } from "./services/database.js";
+import { getWalletManager } from "./wallet/index.js";
 
 // Token minting exports
 export {
@@ -231,7 +234,7 @@ Returns:
 
       const emoji = decision.recommendation === "acquire" ? "✅"
         : decision.recommendation === "skip" ? "⏭️"
-        : "❌";
+          : "❌";
 
       const lines = [
         `## ${emoji} Budget Evaluation: ${decision.dollarAddress}`,
@@ -313,10 +316,33 @@ Returns:
         };
       }
 
-      // Simulate payment (in production: HandCash transaction)
-      const paymentProof = `proof_${Date.now()}`;
+      // Attempt payment via Wallet Manager
+      const walletManager = getWalletManager();
+      let paymentProof = `proof_${Date.now()}`;
+      let usingRealWallet = false;
 
-      // Record the acquisition
+      // Check if we have a real wallet connected
+      if (walletManager.getConnectedWallets().length > 0) {
+        const paymentResult = await walletManager.payForContent({
+          contentToken: response.dollarAddress,
+          amount: 1,
+          priceSats: response.currentPrice,
+          recipient: response.paymentAddress,
+          recipientChain: 'bsv', // Default to BSV
+          preferredChain: 'bsv'
+        });
+
+        if (!paymentResult.success) {
+          throw new Error(`Payment failed: ${paymentResult.error}`);
+        }
+
+        paymentProof = paymentResult.txid;
+        usingRealWallet = true;
+      }
+
+      // Record the acquisition (updates local state)
+      // Note: If using real wallet, this will debit the *simulation* balance too, 
+      // keeping the simulation consistent with actions taken, even if funds came from elsewhere.
       const token = recordAcquisition(
         response.dollarAddress,
         response.currentPrice,
@@ -359,6 +385,46 @@ Returns:
       return {
         isError: true,
         content: [{ type: "text", text: `Acquisition failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: connect_wallet ────────────────────────────────────────
+
+server.registerTool(
+  "path402_connect_wallet",
+  {
+    title: "Connect Wallet",
+    description: `Connect an external wallet provider (e.g. Metanet/Babbage) to the agent.
+This allows real payments to be made using the user's funds.`,
+    inputSchema: ConnectWalletInputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: ConnectWalletInput) => {
+    try {
+      const manager = getWalletManager();
+      if (params.provider === 'metanet') {
+        manager.useMetanet();
+      }
+
+      await manager.connectAll();
+      const addresses = await manager.getAddresses();
+
+      return {
+        content: [{ type: "text", text: `Connected to ${params.provider}. Address: ${addresses['bsv'] || 'unknown'}` }],
+        structuredContent: { connected: true, provider: params.provider, address: addresses['bsv'] }
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Connection failed: ${msg}` }]
       };
     }
   }

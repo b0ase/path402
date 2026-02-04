@@ -171,4 +171,14 @@ export const VerifyHolderInputSchema = z.object({
     .describe("Minimum token balance required (default: 1)")
 }).strict();
 
+
 export type VerifyHolderInput = z.infer<typeof VerifyHolderInputSchema>;
+
+// ── connect_wallet ─────────────────────────────────────────────
+
+export const ConnectWalletInputSchema = z.object({
+  provider: z.enum(["metanet"])
+    .describe("Wallet provider to connect to (currently only 'metanet' supported)")
+}).strict();
+
+export type ConnectWalletInput = z.infer<typeof ConnectWalletInputSchema>;
