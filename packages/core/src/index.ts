@@ -28,7 +28,10 @@ import {
   ServeInputSchema,
   EconomicsInputSchema,
   BatchDiscoverInputSchema,
-  ServableInputSchema
+  ServableInputSchema,
+  TokenStatsInputSchema,
+  HoldersInputSchema,
+  VerifyHolderInputSchema
 } from "./schemas/inputs.js";
 import type {
   DiscoverInput,
@@ -40,7 +43,10 @@ import type {
   ServeInput,
   EconomicsInput,
   BatchDiscoverInput,
-  ServableInput
+  ServableInput,
+  TokenStatsInput,
+  HoldersInput,
+  VerifyHolderInput
 } from "./schemas/inputs.js";
 
 import { discover, acquireContent } from "./services/client.js";
@@ -66,12 +72,50 @@ import {
   getServeHistory,
   getServeStats
 } from "./services/wallet.js";
+import {
+  initDatabase,
+  getTokenStats,
+  getHolders,
+  getHolder,
+  hasTokens,
+  verifyTokenOwnership
+} from "./services/database.js";
+
+// Token minting exports
+export {
+  DEFAULT_SUPPLY,
+  DEFAULT_DECIMALS,
+  DEFAULT_ACCESS_RATE,
+  generateBSV21Inscription,
+  generateTransferInscription,
+  generateTokenId,
+  validateSymbol,
+  prepareMint,
+  calculateServeReward,
+  calculateDividend
+} from "./token/mint.js";
+
+export type {
+  TokenConfig,
+  MintedToken,
+  TokenMetadata,
+  MintRequest,
+  MintResult,
+  ServeProof,
+  ServeReward,
+  StakePosition,
+  DividendClaim
+} from "./token/mint.js";
+
+// Client/Agent exports
+export { Path402Agent, runAgent } from "./client/agent.js";
+export type { AgentConfig, AgentStatus } from "./client/agent.js";
 
 // ── Server Init ─────────────────────────────────────────────────
 
 const server = new McpServer({
-  name: "path402-mcp-server",
-  version: "0.2.0"
+  name: "path402",
+  version: "1.3.0"
 });
 
 // ── Tool: discover ──────────────────────────────────────────────
@@ -880,6 +924,241 @@ Returns:
       content: [{ type: "text", text: lines.join("\n") }],
       structuredContent: { servable: enriched }
     };
+  }
+);
+
+// ── Tool: token_stats (Database) ─────────────────────────────────
+
+server.registerTool(
+  "path402_token_stats",
+  {
+    title: "$402 Token Stats (Live)",
+    description: `Get REAL token statistics from the $402 database. This queries the live Supabase database to show:
+- Treasury balance and address
+- Circulating supply and total sold
+- Current price (calculated from sqrt_decay)
+- Total revenue collected
+- Number of holders
+
+This is NOT simulated data - it's the actual state of the $402 token on BSV.
+
+Args:
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  Live token statistics from the database.`,
+    inputSchema: TokenStatsInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: TokenStatsInput) => {
+    try {
+      initDatabase();
+      const stats = await getTokenStats();
+
+      if (!stats) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Failed to fetch token stats from database. Check SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables." }]
+        };
+      }
+
+      if (params.response_format === "json") {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(stats, null, 2) }]
+        };
+      }
+
+      const lines = [
+        "## $402 Token Statistics (LIVE)",
+        "",
+        `**Treasury Address:** ${stats.treasuryAddress}`,
+        `**Treasury Balance:** ${stats.treasuryBalance.toLocaleString()} tokens`,
+        `**Circulating Supply:** ${stats.circulatingSupply.toLocaleString()} tokens`,
+        `**Total Supply:** ${stats.totalSupply.toLocaleString()} tokens`,
+        `**Total Revenue:** ${stats.totalRevenueSats.toLocaleString()} SAT`,
+        `**Holder Count:** ${stats.holderCount}`,
+        `**Current Price:** ${stats.currentPriceSats} SAT`,
+        "",
+        "_Data from live Supabase database_"
+      ];
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") }]
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Database query failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: holders (Database) ─────────────────────────────────────
+
+server.registerTool(
+  "path402_holders",
+  {
+    title: "$402 Token Holders (Live)",
+    description: `Get REAL list of token holders from the $402 database. Shows:
+- All addresses/handles holding tokens
+- Balance per holder
+- Provider (HandCash/Yours)
+- Staked balance
+- Total purchased and dividends received
+
+This is NOT simulated data - these are actual token holders on BSV.
+
+Args:
+  - limit (number): Maximum holders to return (default: 20, max: 100)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  List of actual token holders from the database.`,
+    inputSchema: HoldersInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: HoldersInput) => {
+    try {
+      initDatabase();
+      const holders = await getHolders();
+      const limited = holders.slice(0, params.limit);
+
+      if (params.response_format === "json") {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ holders: limited, total: holders.length }, null, 2) }]
+        };
+      }
+
+      const lines = [
+        "## $402 Token Holders (LIVE)",
+        "",
+        `**Total Holders:** ${holders.length}`,
+        `**Showing:** ${limited.length}`,
+        "",
+        "| Handle/Address | Balance | Staked | Provider |",
+        "|----------------|---------|--------|----------|"
+      ];
+
+      for (const h of limited) {
+        const identifier = h.handle || h.address?.slice(0, 12) + "..." || "unknown";
+        lines.push(`| ${identifier} | ${h.balance.toLocaleString()} | ${h.staked_balance.toLocaleString()} | ${h.provider} |`);
+      }
+
+      lines.push("", "_Data from live Supabase database_");
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") }]
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Database query failed: ${msg}` }]
+      };
+    }
+  }
+);
+
+// ── Tool: verify_holder (Database) ───────────────────────────────
+
+server.registerTool(
+  "path402_verify",
+  {
+    title: "Verify $402 Token Holder (Live)",
+    description: `Verify if an address or handle holds $402 tokens. This queries the live database to check:
+- Whether they hold tokens
+- Their exact balance
+- Whether they meet a minimum balance requirement
+
+Use this for access control decisions - to verify someone can access gated content.
+
+Args:
+  - address_or_handle (string): BSV address, ordinals address, or HandCash handle
+  - min_balance (number): Minimum tokens required (default: 1)
+
+Returns:
+  Verification result with holder details if found.`,
+    inputSchema: VerifyHolderInputSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
+  },
+  async (params: VerifyHolderInput) => {
+    try {
+      initDatabase();
+      const holder = await getHolder(params.address_or_handle);
+      const meetsMinimum = holder && holder.balance >= params.min_balance;
+
+      const result = {
+        query: params.address_or_handle,
+        found: !!holder,
+        meetsMinimum: meetsMinimum,
+        minRequired: params.min_balance,
+        holder: holder ? {
+          handle: holder.handle,
+          address: holder.address,
+          ordinalsAddress: holder.ordinals_address,
+          balance: holder.balance,
+          stakedBalance: holder.staked_balance,
+          provider: holder.provider,
+          totalPurchased: holder.total_purchased,
+          totalDividends: holder.total_dividends
+        } : null
+      };
+
+      const emoji = meetsMinimum ? "✅" : holder ? "⚠️" : "❌";
+      const status = meetsMinimum ? "VERIFIED" : holder ? "INSUFFICIENT BALANCE" : "NOT FOUND";
+
+      const lines = [
+        `## ${emoji} Token Verification: ${status}`,
+        "",
+        `**Query:** ${params.address_or_handle}`,
+        `**Minimum Required:** ${params.min_balance} tokens`,
+        ""
+      ];
+
+      if (holder) {
+        lines.push(
+          `**Balance:** ${holder.balance.toLocaleString()} tokens`,
+          `**Staked:** ${holder.staked_balance.toLocaleString()} tokens`,
+          `**Provider:** ${holder.provider}`,
+          `**Total Purchased:** ${holder.total_purchased.toLocaleString()} tokens`,
+          "",
+          meetsMinimum
+            ? "✓ This holder is authorized for gated content access."
+            : `✗ Balance (${holder.balance}) is below minimum (${params.min_balance}).`
+        );
+      } else {
+        lines.push("✗ No holder found with this address or handle.");
+      }
+
+      lines.push("", "_Data from live Supabase database_");
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") }]
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Verification failed: ${msg}` }]
+      };
+    }
   }
 );
 

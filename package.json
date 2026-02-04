@@ -1,61 +1,26 @@
 {
-  "name": "path402-mcp-server",
-  "version": "1.2.2",
-  "description": "MCP server + $pathd daemon for the Path 402 Token Protocol — AI agent tools for discovering, evaluating, and acquiring tokenised content via $402",
+  "name": "path402-monorepo",
+  "version": "1.3.1",
+  "private": true,
+  "description": "Path402 monorepo - MCP server, desktop client, and mobile apps",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "bin": {
-    "path402-mcp-server": "dist/index.js",
-    "pathd": "dist/pathd/cli.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
-  "homepage": "https://path402.com",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/b0ase/path402-mcp-server.git"
-  },
-  "bugs": {
-    "url": "https://github.com/b0ase/path402-mcp-server/issues"
-  },
-  "author": "Richard Boase <hello@b0ase.com>",
-  "license": "MIT",
-  "keywords": [
-    "mcp",
-    "mcp-server",
-    "model-context-protocol",
-    "path-protocol",
-    "path402",
-    "402",
-    "micropayments",
-    "tokenised-content",
-    "ai-agents",
-    "bsv",
-    "bitcoin",
-    "claude",
-    "anthropic"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsc --watch",
-    "prepublishOnly": "npm run build"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "express": "^4.21.0",
-    "zod": "^3.24.0"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules",
+    "build:core": "pnpm --filter @path402/core build",
+    "build:mcp": "pnpm --filter path402 build",
+    "dev:core": "pnpm --filter @path402/core dev",
+    "start:mcp": "pnpm --filter path402 start"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.0.0",
+    "turbo": "^2.0.0",
     "typescript": "^5.7.0"
   }
 }

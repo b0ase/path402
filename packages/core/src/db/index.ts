@@ -1,0 +1,527 @@
+/**
+ * $402 Pathd Client - Local SQLite Database
+ *
+ * Each node maintains its own database. No central server dependency.
+ * Data is synced via gossip protocol and verified against on-chain state.
+ */
+
+import Database from 'better-sqlite3';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { mkdirSync, existsSync } from 'fs';
+import { homedir } from 'os';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ── Types ──────────────────────────────────────────────────────────
+
+export interface Token {
+  token_id: string;
+  name: string | null;
+  description: string | null;
+  issuer_address: string | null;
+  issuer_handle: string | null;
+  base_price_sats: number;
+  pricing_model: string;
+  decay_factor: number;
+  current_supply: number;
+  max_supply: number | null;
+  issuer_share_bps: number;
+  network_share_bps: number;
+  content_type: string | null;
+  content_preview: string | null;
+  access_url: string | null;
+  discovered_at: number;
+  last_verified_at: number | null;
+  verification_status: 'unverified' | 'verified' | 'invalid';
+  discovered_via: string | null;
+}
+
+export interface Holding {
+  id: number;
+  token_id: string;
+  balance: number;
+  avg_cost_sats: number | null;
+  total_spent_sats: number;
+  first_acquired_at: number | null;
+  last_acquired_at: number | null;
+  acquisition_supply: number | null;
+  can_serve: boolean;
+  total_serves: number;
+  total_revenue_sats: number;
+  is_speculative: boolean;
+  ai_score_at_purchase: number | null;
+}
+
+export interface Transfer {
+  id: number;
+  token_id: string;
+  from_address: string | null;
+  to_address: string;
+  amount: number;
+  txid: string | null;
+  block_height: number | null;
+  block_time: number | null;
+  verified_at: number | null;
+  verified_via: string | null;
+  created_at: number;
+}
+
+export interface Peer {
+  peer_id: string;
+  host: string;
+  port: number;
+  status: 'unknown' | 'active' | 'stale' | 'banned';
+  last_seen_at: number | null;
+  last_connected_at: number | null;
+  connection_failures: number;
+  reputation_score: number;
+  valid_messages: number;
+  invalid_messages: number;
+  tokens_announced: string | null;
+  discovered_via: string | null;
+  created_at: number;
+}
+
+export interface AIDecision {
+  id: number;
+  token_id: string;
+  decision_type: string;
+  recommendation: string | null;
+  ai_provider: string | null;
+  ai_model: string | null;
+  ai_score: number | null;
+  ai_confidence: number | null;
+  ai_reasoning: string | null;
+  token_supply: number | null;
+  token_price_sats: number | null;
+  action_taken: string | null;
+  price_at_action: number | null;
+  outcome_tracked: boolean;
+  outcome_pnl_sats: number | null;
+  created_at: number;
+}
+
+export interface PortfolioItem {
+  token_id: string;
+  name: string | null;
+  balance: number;
+  avg_cost_sats: number | null;
+  total_spent_sats: number;
+  total_revenue_sats: number;
+  pnl_sats: number;
+  roi_percent: number | null;
+  is_speculative: boolean;
+  current_supply: number;
+  current_price_sats: number;
+}
+
+// ── Database Singleton ─────────────────────────────────────────────
+
+let db: Database.Database | null = null;
+
+/**
+ * Get the database path
+ */
+function getDbPath(): string {
+  const dataDir = process.env.PATHD_DATA_DIR || join(homedir(), '.pathd');
+
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  }
+
+  return join(dataDir, 'pathd.db');
+}
+
+/**
+ * Initialize the local SQLite database
+ */
+export function initLocalDb(dbPath?: string): Database.Database {
+  if (db) return db;
+
+  const path = dbPath || getDbPath();
+  db = new Database(path);
+
+  // Enable WAL mode for better concurrency
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  // Run schema
+  const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
+  db.exec(schema);
+
+  console.log(`[DB] Initialized at ${path}`);
+  return db;
+}
+
+/**
+ * Get database instance (initializes if needed)
+ */
+export function getDb(): Database.Database {
+  if (!db) {
+    return initLocalDb();
+  }
+  return db;
+}
+
+/**
+ * Close database connection
+ */
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
+// ── Config Operations ──────────────────────────────────────────────
+
+export function getConfig(key: string): string | null {
+  const row = getDb().prepare('SELECT value FROM config WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setConfig(key: string, value: string): void {
+  getDb().prepare(`
+    INSERT INTO config (key, value, updated_at)
+    VALUES (?, ?, unixepoch())
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, value);
+}
+
+export function getNodeId(): string {
+  return getConfig('node_id') || 'unknown';
+}
+
+// ── Token Operations ───────────────────────────────────────────────
+
+export function upsertToken(token: Partial<Token> & { token_id: string }): void {
+  const db = getDb();
+
+  const existing = db.prepare('SELECT token_id FROM tokens WHERE token_id = ?').get(token.token_id);
+
+  if (existing) {
+    // Update
+    const updates: string[] = [];
+    const values: unknown[] = [];
+
+    for (const [key, value] of Object.entries(token)) {
+      if (key !== 'token_id' && value !== undefined) {
+        updates.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+
+    if (updates.length > 0) {
+      values.push(token.token_id);
+      db.prepare(`UPDATE tokens SET ${updates.join(', ')} WHERE token_id = ?`).run(...values);
+    }
+  } else {
+    // Insert
+    db.prepare(`
+      INSERT INTO tokens (token_id, name, description, issuer_address, issuer_handle,
+        base_price_sats, pricing_model, current_supply, content_type, content_preview,
+        discovered_via, verification_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      token.token_id,
+      token.name ?? null,
+      token.description ?? null,
+      token.issuer_address ?? null,
+      token.issuer_handle ?? null,
+      token.base_price_sats ?? 500,
+      token.pricing_model ?? 'sqrt_decay',
+      token.current_supply ?? 0,
+      token.content_type ?? null,
+      token.content_preview ?? null,
+      token.discovered_via ?? 'direct',
+      token.verification_status ?? 'unverified'
+    );
+  }
+}
+
+export function getToken(tokenId: string): Token | null {
+  return getDb().prepare('SELECT * FROM tokens WHERE token_id = ?').get(tokenId) as Token | null;
+}
+
+export function getAllTokens(verified_only = false): Token[] {
+  if (verified_only) {
+    return getDb().prepare('SELECT * FROM tokens WHERE verification_status = ?').all('verified') as Token[];
+  }
+  return getDb().prepare('SELECT * FROM tokens').all() as Token[];
+}
+
+export function getTokensBySupply(maxSupply: number): Token[] {
+  return getDb().prepare('SELECT * FROM tokens WHERE current_supply < ? ORDER BY current_supply ASC')
+    .all(maxSupply) as Token[];
+}
+
+export function markTokenVerified(tokenId: string, supply: number): void {
+  getDb().prepare(`
+    UPDATE tokens
+    SET verification_status = 'verified', current_supply = ?, last_verified_at = unixepoch()
+    WHERE token_id = ?
+  `).run(supply, tokenId);
+}
+
+// ── Holding Operations ─────────────────────────────────────────────
+
+export function upsertHolding(tokenId: string, amount: number, pricePaid: number, isSpeculative = false): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+
+  const existing = db.prepare('SELECT * FROM holdings WHERE token_id = ?').get(tokenId) as Holding | undefined;
+
+  if (existing) {
+    const newBalance = existing.balance + amount;
+    const newTotalSpent = existing.total_spent_sats + pricePaid;
+    const newAvgCost = Math.floor(newTotalSpent / newBalance);
+
+    db.prepare(`
+      UPDATE holdings
+      SET balance = ?, total_spent_sats = ?, avg_cost_sats = ?, last_acquired_at = ?
+      WHERE token_id = ?
+    `).run(newBalance, newTotalSpent, newAvgCost, now, tokenId);
+  } else {
+    // Get current supply for position tracking
+    const token = getToken(tokenId);
+    const acquisitionSupply = token?.current_supply ?? 0;
+
+    db.prepare(`
+      INSERT INTO holdings (token_id, balance, avg_cost_sats, total_spent_sats,
+        first_acquired_at, last_acquired_at, acquisition_supply, is_speculative)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(tokenId, amount, pricePaid, pricePaid, now, now, acquisitionSupply, isSpeculative ? 1 : 0);
+  }
+}
+
+export function getHolding(tokenId: string): Holding | null {
+  return getDb().prepare('SELECT * FROM holdings WHERE token_id = ?').get(tokenId) as Holding | null;
+}
+
+export function getAllHoldings(includeZero = false): Holding[] {
+  if (includeZero) {
+    return getDb().prepare('SELECT * FROM holdings').all() as Holding[];
+  }
+  return getDb().prepare('SELECT * FROM holdings WHERE balance > 0').all() as Holding[];
+}
+
+export function getSpeculativeHoldings(): Holding[] {
+  return getDb().prepare('SELECT * FROM holdings WHERE is_speculative = 1 AND balance > 0').all() as Holding[];
+}
+
+export function recordServeRevenue(tokenId: string, revenueSats: number): void {
+  getDb().prepare(`
+    UPDATE holdings
+    SET total_serves = total_serves + 1, total_revenue_sats = total_revenue_sats + ?
+    WHERE token_id = ?
+  `).run(revenueSats, tokenId);
+}
+
+// ── Portfolio View ─────────────────────────────────────────────────
+
+export function getPortfolio(): PortfolioItem[] {
+  return getDb().prepare('SELECT * FROM v_portfolio').all() as PortfolioItem[];
+}
+
+export function getPortfolioSummary(): {
+  totalValue: number;
+  totalSpent: number;
+  totalRevenue: number;
+  totalPnL: number;
+  tokenCount: number;
+  speculativeCount: number;
+} {
+  const portfolio = getPortfolio();
+
+  return {
+    totalValue: portfolio.reduce((sum, p) => sum + (p.balance * p.current_price_sats), 0),
+    totalSpent: portfolio.reduce((sum, p) => sum + p.total_spent_sats, 0),
+    totalRevenue: portfolio.reduce((sum, p) => sum + p.total_revenue_sats, 0),
+    totalPnL: portfolio.reduce((sum, p) => sum + p.pnl_sats, 0),
+    tokenCount: portfolio.length,
+    speculativeCount: portfolio.filter(p => p.is_speculative).length
+  };
+}
+
+// ── Peer Operations ────────────────────────────────────────────────
+
+export function upsertPeer(peer: Partial<Peer> & { peer_id: string; host: string }): void {
+  const db = getDb();
+
+  db.prepare(`
+    INSERT INTO peers (peer_id, host, port, status, discovered_via)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(peer_id) DO UPDATE SET
+      host = excluded.host,
+      port = excluded.port,
+      last_seen_at = unixepoch()
+  `).run(
+    peer.peer_id,
+    peer.host,
+    peer.port ?? 4020,
+    peer.status ?? 'unknown',
+    peer.discovered_via ?? 'gossip'
+  );
+}
+
+export function getPeer(peerId: string): Peer | null {
+  return getDb().prepare('SELECT * FROM peers WHERE peer_id = ?').get(peerId) as Peer | null;
+}
+
+export function getActivePeers(): Peer[] {
+  return getDb().prepare('SELECT * FROM v_active_peers').all() as Peer[];
+}
+
+export function getAllPeers(): Peer[] {
+  return getDb().prepare('SELECT * FROM peers ORDER BY reputation_score DESC').all() as Peer[];
+}
+
+export function updatePeerStatus(peerId: string, status: Peer['status']): void {
+  getDb().prepare('UPDATE peers SET status = ?, last_seen_at = unixepoch() WHERE peer_id = ?')
+    .run(status, peerId);
+}
+
+export function recordPeerMessage(peerId: string, valid: boolean): void {
+  if (valid) {
+    getDb().prepare(`
+      UPDATE peers
+      SET valid_messages = valid_messages + 1,
+          reputation_score = MIN(100, reputation_score + 1),
+          last_seen_at = unixepoch()
+      WHERE peer_id = ?
+    `).run(peerId);
+  } else {
+    getDb().prepare(`
+      UPDATE peers
+      SET invalid_messages = invalid_messages + 1,
+          reputation_score = MAX(0, reputation_score - 10)
+      WHERE peer_id = ?
+    `).run(peerId);
+  }
+}
+
+export function banPeer(peerId: string): void {
+  getDb().prepare('UPDATE peers SET status = ?, reputation_score = 0 WHERE peer_id = ?')
+    .run('banned', peerId);
+}
+
+// ── Transfer Operations ────────────────────────────────────────────
+
+export function recordTransfer(transfer: Omit<Transfer, 'id' | 'created_at'>): void {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO transfers
+    (token_id, from_address, to_address, amount, txid, block_height, block_time, verified_via, received_from_peer)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    transfer.token_id,
+    transfer.from_address,
+    transfer.to_address,
+    transfer.amount,
+    transfer.txid,
+    transfer.block_height,
+    transfer.block_time,
+    transfer.verified_via,
+    null
+  );
+}
+
+export function getTransfers(tokenId: string, limit = 50): Transfer[] {
+  return getDb().prepare('SELECT * FROM transfers WHERE token_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(tokenId, limit) as Transfer[];
+}
+
+export function hasTransfer(txid: string): boolean {
+  const row = getDb().prepare('SELECT 1 FROM transfers WHERE txid = ?').get(txid);
+  return !!row;
+}
+
+// ── AI Decision Operations ─────────────────────────────────────────
+
+export function recordAIDecision(decision: Omit<AIDecision, 'id' | 'created_at' | 'outcome_tracked' | 'outcome_pnl_sats'>): number {
+  const result = getDb().prepare(`
+    INSERT INTO ai_decisions
+    (token_id, decision_type, recommendation, ai_provider, ai_model, ai_score, ai_confidence,
+     ai_reasoning, token_supply, token_price_sats, action_taken, price_at_action)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    decision.token_id,
+    decision.decision_type,
+    decision.recommendation,
+    decision.ai_provider,
+    decision.ai_model,
+    decision.ai_score,
+    decision.ai_confidence,
+    decision.ai_reasoning,
+    decision.token_supply,
+    decision.token_price_sats,
+    decision.action_taken,
+    decision.price_at_action
+  );
+
+  return result.lastInsertRowid as number;
+}
+
+export function getLatestDecision(tokenId: string): AIDecision | null {
+  return getDb().prepare(`
+    SELECT * FROM ai_decisions WHERE token_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(tokenId) as AIDecision | null;
+}
+
+export function getUnresolvedDecisions(): AIDecision[] {
+  return getDb().prepare(`
+    SELECT * FROM ai_decisions WHERE outcome_tracked = 0 AND action_taken IS NOT NULL
+  `).all() as AIDecision[];
+}
+
+export function resolveDecision(decisionId: number, pnlSats: number): void {
+  getDb().prepare(`
+    UPDATE ai_decisions SET outcome_tracked = 1, outcome_pnl_sats = ? WHERE id = ?
+  `).run(pnlSats, decisionId);
+}
+
+// ── Gossip Log ─────────────────────────────────────────────────────
+
+export function logGossipMessage(
+  direction: 'in' | 'out',
+  peerId: string | null,
+  messageType: string,
+  payload: unknown,
+  wasValid?: boolean,
+  validationError?: string
+): void {
+  const hash = Buffer.from(JSON.stringify(payload)).toString('base64').slice(0, 32);
+
+  getDb().prepare(`
+    INSERT INTO gossip_log (direction, peer_id, message_type, message_hash, payload, was_valid, validation_error)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(direction, peerId, messageType, hash, JSON.stringify(payload), wasValid ?? null, validationError ?? null);
+}
+
+export function hasSeenMessage(messageHash: string): boolean {
+  const row = getDb().prepare('SELECT 1 FROM gossip_log WHERE message_hash = ?').get(messageHash);
+  return !!row;
+}
+
+// ── Speculation Opportunities ──────────────────────────────────────
+
+export function getSpeculationOpportunities(): Array<{
+  token_id: string;
+  name: string | null;
+  current_supply: number;
+  current_price_sats: number;
+  ai_score: number | null;
+  ai_confidence: number | null;
+  recommendation: string | null;
+}> {
+  return getDb().prepare('SELECT * FROM v_speculation_opportunities').all() as Array<{
+    token_id: string;
+    name: string | null;
+    current_supply: number;
+    current_price_sats: number;
+    ai_score: number | null;
+    ai_confidence: number | null;
+    recommendation: string | null;
+  }>;
+}

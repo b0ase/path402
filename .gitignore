@@ -3,6 +3,14 @@ node_modules/
 
 # Build output (rebuilt on install via prepublishOnly)
 dist/
+out/
+.next/
+
+# Turbo
+.turbo/
+
+# Release artifacts
+release/
 
 # Logs
 *.log

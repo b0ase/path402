@@ -1,0 +1,53 @@
+{
+  "name": "@path402/core",
+  "version": "1.3.1",
+  "description": "Core business logic for path402 - wallet, gossip, token minting, database",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js"
+    },
+    "./wallet": {
+      "types": "./dist/wallet/index.d.ts",
+      "import": "./dist/wallet/index.js"
+    },
+    "./token": {
+      "types": "./dist/token/mint.d.ts",
+      "import": "./dist/token/mint.js"
+    },
+    "./gossip": {
+      "types": "./dist/gossip/index.d.ts",
+      "import": "./dist/gossip/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "import": "./dist/services/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@supabase/supabase-js": "^2.94.0",
+    "better-sqlite3": "^11.8.0",
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
