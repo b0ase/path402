@@ -8,3 +8,4 @@
 export * from './types.js';
 export * from './bsv.js';
 export * from './manager.js';
+export * from './metanet.js';
