@@ -93,7 +93,7 @@ export async function discover(url: string): Promise<Dollar402Response> {
  */
 export async function acquireContent(
   url: string,
-  _paymentProof: string
+  _paymentProof?: string
 ): Promise<{ content: string; contentType: string }> {
   const httpUrl = normaliseUrl(url);
 
@@ -103,7 +103,7 @@ export async function acquireContent(
       headers: {
         "Accept": "application/json",
         "X-Protocol": "$402",
-        "x-bsv-payment-txid": _paymentProof
+        "x-bsv-payment-txid": _paymentProof || ""
       }
     });
 
