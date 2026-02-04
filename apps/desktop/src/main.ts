@@ -6,19 +6,27 @@
  *
  * The agent runs embedded in Electron (not as child process)
  * to avoid native module ABI mismatches.
+ *
+ * UI is loaded from:
+ * - Development: http://localhost:4022 (Next.js dev server)
+ * - Production: file:// from out/ folder (static export)
  */
 
 import { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, Notification } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { Path402Agent, AgentConfig } from '@path402/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Configuration ───────────────────────────────────────────────────
 
-const GUI_PORT = 4021;
-const GOSSIP_PORT = 4020;
+const API_PORT = 4021;      // Agent API server
+const DEV_PORT = 4022;      // Next.js dev server
+const GOSSIP_PORT = 4020;   // P2P gossip
+
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 // ── State ───────────────────────────────────────────────────────────
 
@@ -26,6 +34,37 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let agent: Path402Agent | null = null;
 let isQuitting = false;
+
+// ── UI Path Resolution ──────────────────────────────────────────────
+
+function getUIPath(): string {
+  if (isDev) {
+    // Development: use Next.js dev server
+    return `http://localhost:${DEV_PORT}`;
+  }
+
+  // Production: try multiple possible locations for static export
+  const possiblePaths = [
+    // Inside app bundle (macOS)
+    join(app.getAppPath(), '..', 'web', 'out', 'index.html'),
+    // Inside resources
+    join(process.resourcesPath || '', 'web', 'out', 'index.html'),
+    // Relative to electron dist
+    join(__dirname, '..', '..', 'web', 'out', 'index.html'),
+    // Monorepo structure
+    join(__dirname, '..', '..', '..', 'web', 'out', 'index.html'),
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      return `file://${p}`;
+    }
+  }
+
+  // Fallback to API server (old behavior)
+  console.log('[Electron] No static UI found, falling back to API server');
+  return `http://localhost:${API_PORT}`;
+}
 
 // ── Agent Management (Embedded) ─────────────────────────────────────
 
@@ -40,7 +79,7 @@ async function startAgent(): Promise<void> {
   const config: AgentConfig = {
     gossipPort: GOSSIP_PORT,
     guiEnabled: true,
-    guiPort: GUI_PORT,
+    guiPort: API_PORT,
     speculationEnabled: false,
     autoAcquire: false
   };
@@ -50,10 +89,21 @@ async function startAgent(): Promise<void> {
   agent.on('ready', (status) => {
     console.log('[Electron] Agent ready');
     showNotification('$402 Client', 'Agent started successfully');
+    // Notify renderer that API is ready
+    mainWindow?.webContents.send('agent-ready', status);
   });
 
   agent.on('error', (error) => {
     console.error('[Electron] Agent error:', error);
+  });
+
+  agent.on('status', (status) => {
+    // Update tray with live status
+    updateTrayMenu({
+      peers: status.peersConnected || 0,
+      tokens: status.tokensKnown || 0,
+      pnl: status.totalPnL || 0
+    });
   });
 
   try {
@@ -85,13 +135,15 @@ function createWindow(): void {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: '#0a0e14',
+    backgroundColor: '#09090b', // zinc-950
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: join(__dirname, 'preload.js')
+      preload: join(__dirname, 'preload.js'),
+      // Allow loading local files
+      webSecurity: !isDev
     },
     icon: getAppIcon(),
     show: false
@@ -110,16 +162,24 @@ function createWindow(): void {
     }
   }, 5000);
 
+  const uiPath = getUIPath();
+  console.log(`[Electron] Loading UI from: ${uiPath}`);
+
   // Handle load failures - retry with delay
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.log(`[Electron] Page load failed: ${errorDescription}, retrying...`);
     setTimeout(() => {
-      mainWindow?.loadURL(`http://localhost:${GUI_PORT}`);
+      mainWindow?.loadURL(uiPath);
     }, 2000);
   });
 
-  // Load the GUI dashboard
-  mainWindow.loadURL(`http://localhost:${GUI_PORT}`);
+  // Load the UI
+  mainWindow.loadURL(uiPath);
+
+  // Open DevTools in development
+  if (isDev) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -195,7 +255,7 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
     {
       label: 'Open in Browser',
       click: () => {
-        shell.openExternal(`http://localhost:${GUI_PORT}`);
+        shell.openExternal(`http://localhost:${API_PORT}`);
       }
     },
     { type: 'separator' },
@@ -204,11 +264,11 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
       submenu: [
         {
           label: 'Enable',
-          click: () => fetch(`http://localhost:${GUI_PORT}/api/speculation/enable`, { method: 'POST' })
+          click: () => agent?.setSpeculation?.(true)
         },
         {
           label: 'Disable',
-          click: () => fetch(`http://localhost:${GUI_PORT}/api/speculation/disable`, { method: 'POST' })
+          click: () => agent?.setSpeculation?.(false)
         }
       ]
     },
@@ -217,11 +277,11 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
       submenu: [
         {
           label: 'Enable',
-          click: () => fetch(`http://localhost:${GUI_PORT}/api/auto/enable`, { method: 'POST' })
+          click: () => agent?.setAutoAcquire?.(true)
         },
         {
           label: 'Disable',
-          click: () => fetch(`http://localhost:${GUI_PORT}/api/auto/disable`, { method: 'POST' })
+          click: () => agent?.setAutoAcquire?.(false)
         }
       ]
     },
@@ -249,8 +309,12 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
 // ── Icons ───────────────────────────────────────────────────────────
 
 function getAppIcon(): Electron.NativeImage {
-  // Create a simple $402 icon programmatically
-  // In production, use a proper .icns/.ico file
+  // Try to load from build resources first
+  const iconPath = join(__dirname, '..', '..', '..', 'build', 'icon.png');
+  if (existsSync(iconPath)) {
+    return nativeImage.createFromPath(iconPath);
+  }
+  // Fallback to generated icon
   return nativeImage.createFromDataURL(getIconDataURL(256));
 }
 
@@ -264,28 +328,10 @@ function getIconDataURL(size: number): string {
   const canvas = `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
       <circle cx="${size/2}" cy="${size/2}" r="${size/2 - 1}" fill="#00d4ff"/>
-      <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="${size/2}" fill="#0a0e14">$</text>
+      <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="${size/2}" fill="#09090b">$</text>
     </svg>
   `;
   return `data:image/svg+xml;base64,${Buffer.from(canvas).toString('base64')}`;
-}
-
-// ── Status Polling ──────────────────────────────────────────────────
-
-async function pollStatus(): Promise<void> {
-  try {
-    const response = await fetch(`http://localhost:${GUI_PORT}/api/status`);
-    if (response.ok) {
-      const status = await response.json();
-      updateTrayMenu({
-        peers: status.peers?.connected || 0,
-        tokens: status.tokens?.known || 0,
-        pnl: status.portfolio?.pnl || 0
-      });
-    }
-  } catch {
-    // Agent not ready yet
-  }
 }
 
 // ── Notifications ───────────────────────────────────────────────────
@@ -299,23 +345,25 @@ function showNotification(title: string, body: string): void {
 // ── IPC Handlers ────────────────────────────────────────────────────
 
 function setupIPC(): void {
+  // Get agent status directly (no HTTP needed)
   ipcMain.handle('get-status', async () => {
-    try {
-      const response = await fetch(`http://localhost:${GUI_PORT}/api/status`);
-      return response.json();
-    } catch {
-      return null;
-    }
+    if (!agent) return null;
+    return agent.getStatus?.() || null;
   });
 
+  // Toggle speculation directly on agent
   ipcMain.handle('toggle-speculation', async (_, enabled: boolean) => {
-    const endpoint = enabled ? 'enable' : 'disable';
-    await fetch(`http://localhost:${GUI_PORT}/api/speculation/${endpoint}`, { method: 'POST' });
+    agent?.setSpeculation?.(enabled);
   });
 
+  // Toggle auto-acquire directly on agent
   ipcMain.handle('toggle-auto-acquire', async (_, enabled: boolean) => {
-    const endpoint = enabled ? 'enable' : 'disable';
-    await fetch(`http://localhost:${GUI_PORT}/api/auto/${endpoint}`, { method: 'POST' });
+    agent?.setAutoAcquire?.(enabled);
+  });
+
+  // Get API base URL for renderer
+  ipcMain.handle('get-api-url', () => {
+    return `http://localhost:${API_PORT}`;
   });
 }
 
@@ -325,7 +373,7 @@ app.whenReady().then(async () => {
   // Start the embedded agent
   await startAgent();
 
-  // Wait a moment for GUI server to be ready
+  // Wait a moment for API server to be ready
   await new Promise(resolve => setTimeout(resolve, 1000));
 
   // Create window
@@ -333,10 +381,6 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   setupIPC();
-
-  // Poll status every 30 seconds
-  setInterval(pollStatus, 30000);
-  pollStatus();
 });
 
 app.on('window-all-closed', () => {
@@ -375,3 +419,4 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
 });
 
 console.log('[Electron] $402 Client starting...');
+console.log(`[Electron] Mode: ${isDev ? 'development' : 'production'}`);

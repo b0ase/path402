@@ -32,11 +32,21 @@
     "copyright": "Copyright © 2026 b0ase",
     "directories": {
       "output": "release",
-      "buildResources": "build"
+      "buildResources": "../../build"
     },
     "files": [
       "dist/**/*",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/out",
+        "to": "web/out"
+      },
+      {
+        "from": "../../packages/core/src/db/schema.sql",
+        "to": "db/schema.sql"
+      }
     ],
     "mac": {
       "category": "public.app-category.finance",
