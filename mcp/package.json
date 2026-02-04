@@ -1,0 +1,60 @@
+{
+  "name": "path402",
+  "version": "1.3.1",
+  "description": "The $402 Protocol — MCP server for AI agents to discover, evaluate, and acquire tokenized content",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "path402": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "homepage": "https://path402.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b0ase/path402.git"
+  },
+  "bugs": {
+    "url": "https://github.com/b0ase/path402/issues"
+  },
+  "author": "Richard Boase <hello@b0ase.com>",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "path-protocol",
+    "path402",
+    "402",
+    "micropayments",
+    "tokenised-content",
+    "ai-agents",
+    "bsv",
+    "bitcoin",
+    "claude",
+    "anthropic"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@path402/core": "workspace:*",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

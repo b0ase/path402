@@ -131,3 +131,44 @@ export const ServableInputSchema = z.object({
 }).strict();
 
 export type ServableInput = z.infer<typeof ServableInputSchema>;
+
+// ── token_stats (Database) ─────────────────────────────────────
+
+export const TokenStatsInputSchema = z.object({
+  response_format: z.enum(["markdown", "json"])
+    .default("markdown")
+    .describe("Output format: 'markdown' for human-readable, 'json' for structured data")
+}).strict();
+
+export type TokenStatsInput = z.infer<typeof TokenStatsInputSchema>;
+
+// ── holders (Database) ─────────────────────────────────────────
+
+export const HoldersInputSchema = z.object({
+  limit: z.number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(20)
+    .describe("Maximum number of holders to return (default: 20, max: 100)"),
+  response_format: z.enum(["markdown", "json"])
+    .default("markdown")
+    .describe("Output format: 'markdown' for human-readable, 'json' for structured data")
+}).strict();
+
+export type HoldersInput = z.infer<typeof HoldersInputSchema>;
+
+// ── verify_holder (Database) ───────────────────────────────────
+
+export const VerifyHolderInputSchema = z.object({
+  address_or_handle: z.string()
+    .min(1)
+    .describe("BSV address, ordinals address, or HandCash handle to verify"),
+  min_balance: z.number()
+    .int()
+    .min(1)
+    .default(1)
+    .describe("Minimum token balance required (default: 1)")
+}).strict();
+
+export type VerifyHolderInput = z.infer<typeof VerifyHolderInputSchema>;

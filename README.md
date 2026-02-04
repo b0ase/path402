@@ -1,29 +1,33 @@
-# PATH402 MCP Server + $pathd Daemon
+# path402
 
-> **Turn AI agents into autonomous economic actors. Run a $402 network node.**
+**Turn AI agents into autonomous economic actors. Run a $402 network node.**
 
 This package includes:
+
 - **MCP Server** — AI agent tools for Claude, GPT, etc.
 - **$pathd Daemon** — Index tokens, serve content, earn rewards
 
-[![npm version](https://badge.fury.io/js/path402-mcp-server.svg)](https://www.npmjs.com/package/path402-mcp-server)
-[![License: Open BSV](https://img.shields.io/badge/License-Open%20BSV-blue.svg)](https://github.com/b0ase/path402-mcp-server/blob/main/LICENSE)
+[![npm version](https://badge.fury.io/js/path402.svg)](https://www.npmjs.com/package/path402)
+[![License: Open BSV](https://img.shields.io/badge/License-Open%20BSV-blue.svg)](LICENSE)
+
+---
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-npm install -g path402-mcp-server
+npm install -g path402
 ```
 
 ### Run $pathd Daemon
 
 ```bash
-pathd start
+path402d start
 ```
 
 This starts a $402 network node that:
+
 - **INDEX** — Reads BSV blockchain, tracks all $402 tokens
 - **VALIDATE** — Confirms token ownership before serving
 - **SERVE** — Delivers content to verified token holders
@@ -32,29 +36,32 @@ This starts a $402 network node that:
 ### $pathd CLI Commands
 
 ```bash
-pathd start           # Start the daemon
-pathd status          # Check if running
-pathd stop            # Stop the daemon
-pathd config          # Show configuration
-pathd mine            # Start PoW20 mining (experimental)
-pathd --help          # Full help
+path402d start           # Start the daemon
+path402d status          # Check if running
+path402d stop            # Stop the daemon
+path402d config          # Show configuration
+path402d mine            # Start PoW20 mining (experimental)
+path402d --help          # Full help
 ```
 
 ### Why Run $pathd?
 
-> **PoW forces operators into the open. Big nodes can't hide.**
+**PoW forces operators into the open. Big nodes can't hide.**
 
 The purpose of PoW20 is NOT just to reward work—it's to force operators into visibility:
+
 - Computational cost → Capital investment → Scale
 - Scale → Physical presence → Regulatory visibility
 - Big nodes must identify themselves
 
 No anonymous propaganda dealers running underground BitTorrent clients with no accountability.
 
-### MCP Server (for AI Agents)
+---
+
+## MCP Server (for AI Agents)
 
 ```bash
-npx path402-mcp-server
+npx path402
 ```
 
 ### Claude Desktop Integration
@@ -66,7 +73,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "path402": {
       "command": "npx",
-      "args": ["path402-mcp-server"],
+      "args": ["path402"],
       "env": {
         "PATH402_API_URL": "https://path402.com",
         "PATH402_DEFAULT_BUDGET": "10000"
@@ -119,6 +126,7 @@ $example.com/$api/$premium → Premium tier token
 ```
 
 Each token has:
+
 - **Price curve** (sqrt_decay by default)
 - **Supply counter** (increases with each acquisition)
 - **Holder registry** (who owns what)
@@ -146,10 +154,10 @@ price = base_price / √(treasury_remaining + 1)
 
 Agents can become economically self-sustaining:
 
-1. **Acquire** tokens at current price
-2. **Serve** content to other agents/users
-3. **Earn** revenue from serving
-4. **Reinvest** profits into more tokens
+1. Acquire tokens at current price
+2. Serve content to other agents/users
+3. Earn revenue from serving
+4. Reinvest profits into more tokens
 
 The sqrt_decay model mathematically guarantees that early acquirers can achieve positive ROI through serving.
 
@@ -169,7 +177,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_discover
 
-```typescript
+```javascript
 // Input
 {
   address: "$example.com/$api"
@@ -204,7 +212,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_evaluate
 
-```typescript
+```javascript
 // Input
 {
   address: "$example.com/$api",
@@ -240,7 +248,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_acquire
 
-```typescript
+```javascript
 // Input
 {
   address: "$example.com/$api",
@@ -265,7 +273,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_wallet
 
-```typescript
+```javascript
 // Output
 {
   balance_sats: 45000,
@@ -295,7 +303,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_serve
 
-```typescript
+```javascript
 // Input
 {
   address: "$example.com/$api",
@@ -315,7 +323,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### path402_servable
 
-```typescript
+```javascript
 // Output
 {
   servable: [
@@ -342,7 +350,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 #### x402_verify
 
-```typescript
+```javascript
 // Input
 {
   payment_proof: "0xabc123...",
@@ -386,7 +394,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
   "mcpServers": {
     "path402": {
       "command": "npx",
-      "args": ["path402-mcp-server"],
+      "args": ["path402"],
       "env": {
         "PATH402_API_URL": "https://path402.com",
         "PATH402_DEFAULT_BUDGET": "50000",
@@ -406,9 +414,9 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
 
 ### 1. Content Discovery Agent
 
-```
 Agent explores the $402 namespace, discovering valuable content:
 
+```
 1. path402_batch_discover(["$news.com", "$research.org", "$data.io"])
 2. path402_evaluate() on promising finds
 3. path402_acquire() undervalued tokens
@@ -417,9 +425,9 @@ Agent explores the $402 namespace, discovering valuable content:
 
 ### 2. API Gateway Agent
 
-```
 Agent manages API access for a team:
 
+```
 1. path402_acquire("$api.service.com", 1000)
 2. path402_wallet() to track usage
 3. path402_serve() when team members need API calls
@@ -428,9 +436,9 @@ Agent manages API access for a team:
 
 ### 3. Research Agent
 
-```
 Agent gathers information from paywalled sources:
 
+```
 1. path402_discover() research databases
 2. path402_economics() to evaluate cost/benefit
 3. path402_acquire() access to valuable sources
@@ -439,9 +447,9 @@ Agent gathers information from paywalled sources:
 
 ### 4. Revenue-Generating Agent
 
-```
 Agent that pays for itself:
 
+```
 1. path402_acquire() tokens at low prices
 2. path402_servable() to list inventory
 3. path402_serve() to other agents
@@ -468,14 +476,16 @@ BSV is the settlement layer. Payments from other chains are verified and inscrib
 
 ### PATH402.com Endpoints
 
-**$PATH402 Token (PATH402's own token)**
+**$PATH402 Token** (PATH402's own token)
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/token/stats` | GET | $PATH402 statistics & pricing |
 | `/api/token/buy` | POST | Acquire $PATH402 tokens |
 | `/api/token/holding` | GET | User's $PATH402 holdings |
 
-**Multi-Tenant Marketplace (any $address)**
+**Multi-Tenant Marketplace** (any $address)
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/tokens` | GET | List all registered tokens |
@@ -486,7 +496,8 @@ BSV is the settlement layer. Payments from other chains are verified and inscrib
 | `/api/tokens/transfer` | POST | Transfer tokens |
 | `/api/tokens/history` | GET | Transaction history |
 
-**x402 Facilitator (payment verification)**
+**x402 Facilitator** (payment verification)
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/.well-known/x402.json` | GET | Discovery document |
@@ -502,8 +513,8 @@ BSV is the settlement layer. Payments from other chains are verified and inscrib
 ### Running Locally
 
 ```bash
-git clone https://github.com/b0ase/path402-mcp-server
-cd path402-mcp-server
+git clone https://github.com/b0ase/path402
+cd path402
 npm install
 npm run dev
 ```
@@ -526,22 +537,26 @@ npm run build
 ## Roadmap
 
 ### v1.0.0 (Current)
+
 - ✅ 10 core tools
 - ✅ sqrt_decay pricing
 - ✅ Budget management
 - ✅ Simulated acquisition/serving
 
 ### v1.1.0 (In Progress)
+
 - 🔲 Live HTTP client for path402.com
 - 🔲 x402 facilitator tools (verify, settle, inscription)
 - 🔲 Real payment integration
 
 ### v1.2.0 (Planned)
+
 - 🔲 Transfer and history tools
 - 🔲 Multi-agent coordination
 - 🔲 Persistent storage
 
 ### v1.3.0 (Planned)
+
 - 🔲 Creator tools (register)
 - 🔲 Advanced analytics
 - 🔲 Agent marketplace integration
@@ -550,7 +565,7 @@ npm run build
 
 ## Contributing
 
-Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md).
+Contributions welcome! Please read our Contributing Guide.
 
 ```bash
 # Fork the repo
@@ -573,19 +588,15 @@ git push origin feature/your-feature
 ## Links
 
 - **Website**: [path402.com](https://path402.com)
-- **Whitepaper**: [path402.com/402](https://path402.com/402)
+- **Whitepaper**: [path402.com/whitepaper](https://path402.com/whitepaper)
 - **Exchange**: [path402.com/exchange](https://path402.com/exchange)
 - **Documentation**: [path402.com/docs](https://path402.com/docs)
-- **GitHub**: [github.com/b0ase/path402-mcp-server](https://github.com/b0ase/path402-mcp-server)
+- **GitHub**: [github.com/b0ase/path402](https://github.com/b0ase/path402)
 
 ---
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/b0ase/path402-mcp-server/issues)
+- **Issues**: [GitHub Issues](https://github.com/b0ase/path402/issues)
 - **Email**: hello@b0ase.com
-- **Twitter**: [@b0ase](https://twitter.com/b0ase)
-
----
-
-**Built by [b0ase.com](https://b0ase.com)** | **Powered by BSV**
+- **Twitter**: @b0ase
