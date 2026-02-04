@@ -4,54 +4,38 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const navItems = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/portfolio/', label: 'Portfolio' },
-  { href: '/market/', label: 'Market' },
-  { href: '/exchange/', label: 'Exchange' },
-  { href: '/upload/', label: 'Upload' },
-  { href: '/live/', label: 'Live' }
+  { href: '/', label: 'DASHBOARD' },
+  { href: '/portfolio/', label: 'PORTFOLIO' },
+  { href: '/market/', label: 'MARKET' },
+  { href: '/exchange/', label: 'EXCHANGE' },
+  { href: '/upload/', label: 'UPLOAD' },
+  { href: '/live/', label: 'LIVE' }
 ];
 
 export function Navigation() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-14">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold text-cyan-400">$402</span>
-            <span className="text-zinc-500 text-sm">Client</span>
-          </Link>
+    <nav className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black sticky top-10 z-40 no-drag">
+      <div className="w-full px-4 md:px-8">
+        <div className="flex items-center h-12 gap-0 overflow-x-auto border-x border-gray-200 dark:border-gray-800">
+          {navItems.map((item, i, arr) => {
+            const isActive = pathname === item.href ||
+              (item.href !== '/' && pathname.startsWith(item.href));
 
-          {/* Nav Links */}
-          <div className="flex items-center gap-1">
-            {navItems.map((item) => {
-              const isActive = pathname === item.href ||
-                (item.href !== '/' && pathname.startsWith(item.href));
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`px-3 py-2 text-sm rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* Status indicator */}
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-zinc-500">Connected</span>
-          </div>
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`px-6 h-full flex items-center text-[10px] uppercase tracking-[0.2em] font-mono font-bold transition-colors whitespace-nowrap ${isActive
+                    ? 'bg-black dark:bg-white text-white dark:text-black'
+                    : 'bg-gray-50 dark:bg-zinc-900/10 text-gray-500 hover:text-black dark:hover:text-white'
+                  } ${i < arr.length - 1 ? 'border-r border-gray-200 dark:border-gray-800' : ''}`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </nav>

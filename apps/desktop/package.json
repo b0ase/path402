@@ -3,6 +3,7 @@
   "version": "1.3.1",
   "private": true,
   "description": "Path402 Desktop Client - Electron wrapper",
+  "author": "b0ase <b0ase@path402.com>",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -22,7 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "electron": "^33.0.0",
+    "electron": "33.4.11",
     "electron-builder": "^25.0.0",
     "typescript": "^5.7.0"
   },
@@ -91,7 +92,7 @@
     "publish": {
       "provider": "github",
       "owner": "b0ase",
-      "repo": "path402"
+      "repo": "path402-mcp-server"
     }
   }
 }

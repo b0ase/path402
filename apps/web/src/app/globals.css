@@ -2,55 +2,119 @@
 @tailwind components;
 @tailwind utilities;
 
+/* INDUSTRIAL BLUEPRINT - Light Mode */
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 10, 14, 20;
-  --background-end-rgb: 10, 14, 20;
+  --bg-surface: #ffffff;
+  --bg-surface-secondary: #fafafa;
+  --bg-card: #f4f4f5;
+  --text-primary: #000000;
+  --text-secondary: #3f3f46;
+  --text-muted: #71717a;
+  --border-primary: #e4e4e7;
+  --border-secondary: #d4d4d8;
+}
+
+/* INDUSTRIAL BLUEPRINT - Dark Mode */
+.dark {
+  --bg-surface: #000000;
+  --bg-surface-secondary: #09090b;
+  --bg-card: #18181b;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-primary: #27272a;
+  --border-secondary: #3f3f46;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-    to bottom,
-    rgb(var(--background-start-rgb)),
-    rgb(var(--background-end-rgb))
-  );
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: ui-monospace, 'JetBrains Mono', 'Fira Code', monospace;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Custom scrollbar */
+/* Selection - light */
+::selection {
+  background: #000000;
+  color: #ffffff;
+}
+
+/* Selection - dark */
+.dark ::selection {
+  background: #ffffff;
+  color: #000000;
+}
+
+/* Scrollbar - light */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1f2e;
+  background: #fafafa;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 4px;
+  background: #d4d4d8;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #a1a1aa;
 }
 
-/* Glow effects */
-.glow-cyan {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+/* Scrollbar - dark */
+.dark ::-webkit-scrollbar-track {
+  background: #09090b;
 }
 
-.glow-green {
-  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+.dark ::-webkit-scrollbar-thumb {
+  background: #27272a;
 }
 
-/* Card styles */
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 1px solid var(--border-secondary);
+  outline-offset: 2px;
+}
+
+/* INDUSTRIAL Card - Sharp corners, heavy borders */
 .card {
-  @apply bg-zinc-900/50 border border-zinc-800 rounded-lg p-4;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  padding: 1.5rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .card:hover {
-  @apply border-zinc-700;
+  border-color: var(--border-secondary);
+}
+
+/* INDUSTRIAL Section label */
+.section-label {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+}
+
+/* Electron window drag region */
+.titlebar {
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.titlebar button,
+.titlebar a,
+.titlebar input,
+.no-drag {
+  -webkit-app-region: no-drag;
 }

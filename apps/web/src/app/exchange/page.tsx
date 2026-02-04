@@ -10,10 +10,25 @@ export default function ExchangePage() {
     <div className="min-h-screen">
       <Navigation />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Exchange</h1>
-          <p className="text-zinc-500">
+      <main className="w-full px-4 md:px-8 py-8">
+        {/* Header */}
+        <div className="mb-12 border-b border-zinc-200 dark:border-zinc-800 pb-8">
+          <div className="flex flex-col md:flex-row md:items-end gap-6 mb-4">
+            <div className="bg-gray-100 dark:bg-zinc-900/50 w-16 h-16 md:w-24 md:h-24 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 self-start text-black dark:text-white">
+              <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <div className="flex items-end gap-4">
+              <h1 className="text-4xl md:text-6xl font-bold tracking-tighter leading-none text-zinc-900 dark:text-white">
+                EXCHANGE
+              </h1>
+              <div className="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-[0.2em]">
+                GLOBAL RANKINGS
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-400 max-w-2xl text-lg leading-relaxed">
             All $402 tokens ranked by market cap
           </p>
         </div>

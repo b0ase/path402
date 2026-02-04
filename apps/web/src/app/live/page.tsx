@@ -7,10 +7,25 @@ export default function LivePage() {
     <div className="min-h-screen">
       <Navigation />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Live Streaming</h1>
-          <p className="text-zinc-500">
+      <main className="w-full px-4 md:px-8 py-8">
+        {/* Header */}
+        <div className="mb-12 border-b border-zinc-200 dark:border-zinc-800 pb-8">
+          <div className="flex flex-col md:flex-row md:items-end gap-6 mb-4">
+            <div className="bg-gray-100 dark:bg-zinc-900/50 w-16 h-16 md:w-24 md:h-24 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 self-start text-black dark:text-white">
+              <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="flex items-end gap-4">
+              <h1 className="text-4xl md:text-6xl font-bold tracking-tighter leading-none text-zinc-900 dark:text-white">
+                LIVE
+              </h1>
+              <div className="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-[0.2em]">
+                BROADCAST
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-400 max-w-2xl text-lg leading-relaxed">
             Token-gated livestreams with real-time payments
           </p>
         </div>
