@@ -31,21 +31,35 @@ export default function UploadPage() {
     <div className="min-h-screen">
       <Navigation />
 
-      <main className="max-w-3xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Upload Content</h1>
-          <p className="text-zinc-500">
+      <main className="w-full px-4 md:px-8 py-8">
+        {/* Header */}
+        <div className="mb-12 border-b border-zinc-200 dark:border-zinc-800 pb-8">
+          <div className="flex flex-col md:flex-row md:items-end gap-6 mb-4">
+            <div className="bg-gray-100 dark:bg-zinc-900/50 w-16 h-16 md:w-24 md:h-24 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 self-start text-black dark:text-white">
+              <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <div className="flex items-end gap-4">
+              <h1 className="text-4xl md:text-6xl font-bold tracking-tighter leading-none text-zinc-900 dark:text-white">
+                UPLOAD
+              </h1>
+              <div className="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-[0.2em]">
+                NEW CONTENT
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-400 max-w-2xl text-lg leading-relaxed">
             Upload a video and mint a $402 token
           </p>
         </div>
 
         {/* Drop Zone */}
         <div
-          className={`card border-2 border-dashed mb-8 transition-colors ${
-            dragActive
-              ? 'border-cyan-500 bg-cyan-500/10'
-              : 'border-zinc-700 hover:border-zinc-600'
-          }`}
+          className={`card border-2 border-dashed mb-8 transition-colors ${dragActive
+            ? 'border-cyan-500 bg-cyan-500/10'
+            : 'border-zinc-700 hover:border-zinc-600'
+            }`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}

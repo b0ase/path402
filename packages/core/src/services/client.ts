@@ -28,10 +28,38 @@ export async function discover(url: string): Promise<Dollar402Response> {
       }
     });
 
-    // A $402 server should return 402 with pricing in the body
+    // Handle BRC-105 402 Response
     if (response.status === 402) {
-      const body = await response.json() as Dollar402Response;
-      return body;
+      const amount = response.headers.get('x-bsv-payment-amount');
+      const destination = response.headers.get('x-bsv-payment-destination');
+      // legacy body check
+      let body: any = {};
+      try { body = await response.json(); } catch (e) { }
+
+      if (amount && destination) {
+        return {
+          protocol: "$402",
+          version: PROTOCOL_VERSION,
+          dollarAddress: body.token || url, // Fallback if not in body
+          pricing: {
+            model: body.pricing_model || PricingModel.FIXED,
+            basePrice: parseInt(amount),
+            currency: "SAT"
+          },
+          revenue: {
+            model: RevenueModel.FIXED_ISSUER,
+            issuerShare: 1.0
+          },
+          currentSupply: body.currentSupply || 0,
+          currentPrice: parseInt(amount),
+          paymentAddress: destination,
+          contentType: response.headers.get('content-type') || "application/json",
+          contentPreview: body.details || "Payment Required"
+        } as Dollar402Response;
+      }
+
+      // Fallback to legacy body-only if headers missing
+      return body as Dollar402Response;
     }
 
     // If we get 200, content is free (no $402 gate)
@@ -75,7 +103,7 @@ export async function acquireContent(
       headers: {
         "Accept": "application/json",
         "X-Protocol": "$402",
-        "X-Payment-Proof": _paymentProof
+        "x-bsv-payment-txid": _paymentProof
       }
     });
 

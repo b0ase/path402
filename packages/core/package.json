@@ -32,7 +32,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/db/schema.sql dist/db/schema.sql",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit"
   },
