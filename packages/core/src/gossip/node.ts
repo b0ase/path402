@@ -1,12 +1,22 @@
 /**
- * $402 Gossip Node
- *
- * The main gossip service that orchestrates peer communication,
- * message routing, on-chain verification, and data synchronization.
+ * $402 Gossip Node (libp2p implementation)
+ * 
+ * Professional-grade P2P networking with:
+ * - Noise encryption (PFS)
+ * - Yamux multiplexing
+ * - GossipSub message propagation
  */
 
 import { EventEmitter } from 'events';
-import { PeerManager } from './peer.js';
+import { createLibp2p, Libp2p } from 'libp2p';
+import { tcp } from '@libp2p/tcp';
+import { noise } from '@libp2p/noise';
+import { yamux } from '@libp2p/yamux';
+import { gossipsub } from '@libp2p/gossipsub';
+import { bootstrap } from '@libp2p/bootstrap';
+import { identify } from '@libp2p/identify';
+import { multiaddr } from '@multiformats/multiaddr';
+import { createEd25519PeerId } from '@libp2p/peer-id-factory';
 import {
   GossipMessage,
   MessageType,
@@ -14,17 +24,12 @@ import {
   createRequestToken,
   createTokenData,
   createTransferEvent,
-  createPeerListRequest,
-  createPeerList,
-  prepareForRelay,
   hashMessage,
   AnnounceTokenPayload,
   RequestTokenPayload,
   TokenDataPayload,
   TransferEventPayload,
   HolderUpdatePayload,
-  PeerListPayload,
-  PeerInfo,
   TicketStampPayload,
   createTicketStamp,
   ChatPayload,
@@ -35,17 +40,12 @@ import {
   getNodeId,
   upsertToken,
   getToken,
-  getAllTokens,
-  markTokenVerified,
-  upsertPeer,
-  getActivePeers,
-  getAllPeers,
   recordTransfer,
   hasTransfer,
   logGossipMessage,
   hasSeenMessage,
-  getHolding,
-  getTransfers
+  getTransfers,
+  upsertPeer
 } from '../db/index.js';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -57,26 +57,19 @@ export interface GossipNodeConfig {
   verifyOnChain?: boolean;
 }
 
-export interface GossipNodeEvents {
-  'ready': () => void;
-  'token:discovered': (tokenId: string, token: AnnounceTokenPayload) => void;
-  'transfer:received': (transfer: TransferEventPayload) => void;
-  'peer:count': (count: number) => void;
-  'chat:received': (chat: ChatPayload) => void;
-}
-
-const DEFAULT_BOOTSTRAP_PEERS: string[] = [
-  // Add known bootstrap nodes here
-  // 'pathd.b0ase.com:4020',
-];
+const TOPICS = {
+  TOKENS: '$402/tokens/v1',
+  TRANSFERS: '$402/transfers/v1',
+  STAMPS: '$402/stamps/v1',
+  CHAT: '$402/chat/v1'
+};
 
 // ── Gossip Node ────────────────────────────────────────────────────
 
 export class GossipNode extends EventEmitter {
   private nodeId: string;
-  private peerManager: PeerManager;
+  private libp2p: Libp2p | null = null;
   private config: Required<GossipNodeConfig>;
-  private seenMessages: Set<string> = new Set();
   private started = false;
 
   constructor(config: GossipNodeConfig = {}) {
@@ -84,13 +77,10 @@ export class GossipNode extends EventEmitter {
     this.nodeId = getNodeId();
     this.config = {
       port: config.port ?? GOSSIP_PORT,
-      bootstrapPeers: config.bootstrapPeers ?? DEFAULT_BOOTSTRAP_PEERS,
+      bootstrapPeers: config.bootstrapPeers ?? [],
       maxPeers: config.maxPeers ?? 50,
       verifyOnChain: config.verifyOnChain ?? true
     };
-    this.peerManager = new PeerManager(this.config.port);
-
-    this.setupPeerHandlers();
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────
@@ -98,164 +88,146 @@ export class GossipNode extends EventEmitter {
   async start(): Promise<void> {
     if (this.started) return;
 
-    console.log(`[GossipNode] Starting node ${this.nodeId.slice(0, 8)}...`);
+    console.log(`[GossipNode] Initializing libp2p node ${this.nodeId.slice(0, 8)}...`);
 
-    // Start listening for connections
-    await this.peerManager.startServer();
+    const bootstrapNodes = this.config.bootstrapPeers.map(addr => addr.startsWith('/') ? addr : `/ip4/${addr.split(':')[0]}/tcp/${addr.split(':')[1] || GOSSIP_PORT}/p2p/REPLACE_ME`);
 
-    // Connect to bootstrap peers
-    await this.connectToBootstrapPeers();
+    this.libp2p = await createLibp2p({
+      addresses: {
+        listen: [`/ip4/0.0.0.0/tcp/${this.config.port}`]
+      },
+      transports: [tcp() as any],
+      connectionEncryption: [noise() as any],
+      streamMuxers: [yamux() as any],
+      services: {
+        identify: identify({
+          protocolPrefix: '402-p2p'
+        } as any) as any,
+        pubsub: gossipsub({
+          allowPublishToZeroTopicPeers: true,
+          fallbackToFloodsub: true,
+          globalSignaturePolicy: 'StrictNoSign'
+        }) as any
+      },
+      connectionManager: {
+        maxConnections: this.config.maxPeers,
+        minConnections: 1
+      },
+      // Essential for Identify service
+      nodeInfo: {
+        name: 'path402',
+        version: '3.0.0',
+        userAgent: 'path402/3.0.0'
+      },
+      // Peer discovery via bootstrap
+      peerDiscovery: this.config.bootstrapPeers.length > 0 ? [
+        bootstrap({
+          list: this.config.bootstrapPeers
+        }) as any
+      ] : []
+    } as any);
+
+    // Setup event handlers
+    this.setupLibp2pHandlers();
+
+    // Start node
+    await this.libp2p.start();
+
+    // Subscribe to topics
+    if (this.libp2p) {
+      const lp2p = this.libp2p as any;
+      await lp2p.services.pubsub.subscribe(TOPICS.TOKENS);
+      await lp2p.services.pubsub.subscribe(TOPICS.TRANSFERS);
+      await lp2p.services.pubsub.subscribe(TOPICS.STAMPS);
+      await lp2p.services.pubsub.subscribe(TOPICS.CHAT);
+    }
 
     this.started = true;
     this.emit('ready');
 
-    console.log(`[GossipNode] Node ready with ${this.peerManager.getPeerCount()} peers`);
+    console.log(`[GossipNode] libp2p node started. Identity: ${this.libp2p.peerId.toString()}`);
+    console.log(`[GossipNode] Listening on:`);
+    this.libp2p.getMultiaddrs().forEach(ma => console.log(`  ${ma.toString()}`));
+    console.log(`[GossipNode] Transport: NOISE ENCRYPTED TCP (PFS)`);
   }
 
-  stop(): void {
-    this.peerManager.stopServer();
+  async stop(): Promise<void> {
+    if (this.libp2p) {
+      await this.libp2p.stop();
+      this.libp2p = null;
+    }
     this.started = false;
-    console.log('[GossipNode] Node stopped');
+    console.log('[GossipNode] libp2p node stopped');
   }
 
-  private async connectToBootstrapPeers(): Promise<void> {
-    // Try saved peers first
-    const savedPeers = getAllPeers().filter(p => p.status !== 'banned');
+  private setupLibp2pHandlers(): void {
+    if (!this.libp2p) return;
 
-    for (const peer of savedPeers.slice(0, 10)) {
-      try {
-        await this.peerManager.connect(peer.host, peer.port);
-      } catch (err) {
-        // Ignore connection failures
-      }
-    }
-
-    // Then try bootstrap peers
-    for (const addr of this.config.bootstrapPeers) {
-      const [host, portStr] = addr.split(':');
-      const port = parseInt(portStr) || GOSSIP_PORT;
-
-      try {
-        await this.peerManager.connect(host, port);
-      } catch (err) {
-        console.warn(`[GossipNode] Failed to connect to bootstrap peer ${addr}`);
-      }
-    }
-  }
-
-  // ── Peer Event Handlers ────────────────────────────────────────
-
-  private setupPeerHandlers(): void {
-    this.peerManager.on('peer:connected', (peerId, conn) => {
+    this.libp2p.addEventListener('peer:connect', (evt: any) => {
+      const peerId = evt.detail.toString();
       console.log(`[GossipNode] Peer connected: ${peerId}`);
-      this.emit('peer:count', this.peerManager.getPeerCount());
+      this.emit('peer:count', this.getPeerCount());
 
-      // Request peer list from new peer
-      const request = createPeerListRequest(this.nodeId);
-      this.peerManager.sendMessage(peerId, request);
+      // Store in DB
+      upsertPeer({
+        peer_id: peerId,
+        host: 'unknown',
+        port: 0,
+        status: 'active',
+        discovered_via: 'libp2p'
+      });
     });
 
-    this.peerManager.on('peer:disconnected', (peerId) => {
+    this.libp2p.addEventListener('peer:disconnect', (evt: any) => {
+      const peerId = evt.detail.toString();
       console.log(`[GossipNode] Peer disconnected: ${peerId}`);
-      this.emit('peer:count', this.peerManager.getPeerCount());
+      this.emit('peer:count', this.getPeerCount());
     });
 
-    this.peerManager.on('peer:message', (peerId, msg) => {
-      this.handleMessage(peerId, msg);
-    });
-
-    this.peerManager.on('peer:error', (peerId, error) => {
-      console.error(`[GossipNode] Peer error ${peerId}:`, error.message);
+    (this.libp2p.services.pubsub as any).addEventListener('message', (evt: any) => {
+      const topic = evt.detail.topic;
+      const data = evt.detail.data;
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(data)) as GossipMessage;
+        this.handleGossipMessage(topic, msg);
+      } catch (err) {
+        console.error(`[GossipNode] Failed to handle pubsub message:`, err);
+      }
     });
   }
 
   // ── Message Handling ───────────────────────────────────────────
 
-  private handleMessage(peerId: string, msg: GossipMessage): void {
+  private handleGossipMessage(topic: string, msg: GossipMessage): void {
     // Deduplicate
     const msgHash = hashMessage(msg);
-    if (this.seenMessages.has(msgHash) || hasSeenMessage(msgHash)) {
-      return; // Already processed
+    if (hasSeenMessage(msgHash)) {
+      return;
     }
-    this.seenMessages.add(msgHash);
 
     // Log
-    logGossipMessage('in', peerId, msg.type, msg.payload, true);
+    logGossipMessage('in', msg.sender_id, msg.type, msg.payload, true);
 
     // Handle by type
     switch (msg.type) {
-      case MessageType.PEER_LIST_REQUEST:
-        this.handlePeerListRequest(peerId);
-        break;
-
-      case MessageType.PEER_LIST:
-        this.handlePeerList(msg as GossipMessage<PeerListPayload>);
-        break;
-
       case MessageType.ANNOUNCE_TOKEN:
-        this.handleAnnounceToken(peerId, msg as GossipMessage<AnnounceTokenPayload>);
-        break;
-
-      case MessageType.REQUEST_TOKEN:
-        this.handleRequestToken(peerId, msg as GossipMessage<RequestTokenPayload>);
-        break;
-
-      case MessageType.TOKEN_DATA:
-        this.handleTokenData(peerId, msg as GossipMessage<TokenDataPayload>);
+        this.handleAnnounceToken(msg.sender_id, msg as GossipMessage<AnnounceTokenPayload>);
         break;
 
       case MessageType.TRANSFER_EVENT:
-        this.handleTransferEvent(peerId, msg as GossipMessage<TransferEventPayload>);
-        break;
-
-      case MessageType.HOLDER_UPDATE:
-        this.handleHolderUpdate(peerId, msg as GossipMessage<HolderUpdatePayload>);
+        this.handleTransferEvent(msg.sender_id, msg as GossipMessage<TransferEventPayload>);
         break;
 
       case MessageType.TICKET_STAMP:
-        this.handleTicketStamp(peerId, msg as GossipMessage<TicketStampPayload>);
+        this.handleTicketStamp(msg.sender_id, msg as GossipMessage<TicketStampPayload>);
         break;
 
       case MessageType.CHAT_MESSAGE:
-        this.handleChatMessage(peerId, msg as GossipMessage<ChatPayload>);
+        this.handleChatMessage(msg.sender_id, msg as GossipMessage<ChatPayload>);
         break;
-    }
 
-    // Relay to other peers (if appropriate)
-    this.relayMessage(msg, peerId);
-  }
-
-  private handlePeerListRequest(peerId: string): void {
-    const peers = getActivePeers().map(p => ({
-      peer_id: p.peer_id,
-      host: p.host,
-      port: p.port,
-      last_seen: p.last_seen_at || 0,
-      reputation: p.reputation_score
-    }));
-
-    const response = createPeerList(this.nodeId, peers);
-    this.peerManager.sendMessage(peerId, response);
-  }
-
-  private handlePeerList(msg: GossipMessage<PeerListPayload>): void {
-    for (const peer of msg.payload.peers) {
-      // Don't add self
-      if (peer.peer_id === this.nodeId) continue;
-
-      // Store peer
-      upsertPeer({
-        peer_id: peer.peer_id,
-        host: peer.host,
-        port: peer.port,
-        status: 'unknown',
-        discovered_via: 'gossip'
-      });
-
-      // Try to connect if we need more peers
-      if (this.peerManager.getPeerCount() < this.config.maxPeers) {
-        this.peerManager.connect(peer.host, peer.port).catch(() => { });
-      }
+      // Some messages like REQUEST_TOKEN might still need direct streams or another pubsub topic
+      // For now, we focus on the main gossip topics.
     }
   }
 
@@ -263,7 +235,6 @@ export class GossipNode extends EventEmitter {
     const token = msg.payload;
     console.log(`[GossipNode] Token announced: ${token.token_id} (supply: ${token.current_supply})`);
 
-    // Store token
     upsertToken({
       token_id: token.token_id,
       name: token.name,
@@ -277,103 +248,14 @@ export class GossipNode extends EventEmitter {
     });
 
     this.emit('token:discovered', token.token_id, token);
-
-    // If we're interested, request full data
-    // (Could add logic here to filter which tokens we care about)
-  }
-
-  private handleRequestToken(peerId: string, msg: GossipMessage<RequestTokenPayload>): void {
-    const tokenId = msg.payload.token_id;
-    const token = getToken(tokenId);
-
-    if (!token) {
-      return; // We don't have this token
-    }
-
-    // Get transfers for this token
-    const transfers = getTransfers(tokenId, 10);
-
-    const response = createTokenData(this.nodeId, {
-      token_id: token.token_id,
-      name: token.name || undefined,
-      description: token.description || undefined,
-      issuer_address: token.issuer_address || undefined,
-      issuer_handle: token.issuer_handle || undefined,
-      base_price_sats: token.base_price_sats,
-      pricing_model: token.pricing_model,
-      current_supply: token.current_supply,
-      max_supply: token.max_supply || undefined,
-      issuer_share_bps: token.issuer_share_bps,
-      network_share_bps: token.network_share_bps,
-      content_type: token.content_type || undefined,
-      content_preview: token.content_preview || undefined,
-      access_url: token.access_url || undefined,
-      holders_count: 0, // TODO: count from holders table
-      recent_transfers: transfers.map(t => ({
-        token_id: t.token_id,
-        from_address: t.from_address || undefined,
-        to_address: t.to_address,
-        amount: t.amount,
-        txid: t.txid || '',
-        block_height: t.block_height || undefined,
-        block_time: t.block_time || undefined
-      }))
-    });
-
-    this.peerManager.sendMessage(peerId, response);
-  }
-
-  private handleTokenData(peerId: string, msg: GossipMessage<TokenDataPayload>): void {
-    const data = msg.payload;
-
-    // Store/update token
-    upsertToken({
-      token_id: data.token_id,
-      name: data.name,
-      description: data.description,
-      issuer_address: data.issuer_address,
-      issuer_handle: data.issuer_handle,
-      base_price_sats: data.base_price_sats,
-      pricing_model: data.pricing_model,
-      current_supply: data.current_supply,
-      max_supply: data.max_supply,
-      issuer_share_bps: data.issuer_share_bps,
-      network_share_bps: data.network_share_bps,
-      content_type: data.content_type,
-      content_preview: data.content_preview,
-      access_url: data.access_url,
-      discovered_via: 'gossip'
-    });
-
-    // Store transfers
-    for (const transfer of data.recent_transfers) {
-      if (!hasTransfer(transfer.txid)) {
-        recordTransfer({
-          token_id: transfer.token_id,
-          from_address: transfer.from_address || null,
-          to_address: transfer.to_address,
-          amount: transfer.amount,
-          txid: transfer.txid,
-          block_height: transfer.block_height || null,
-          block_time: transfer.block_time || null,
-          verified_at: null,
-          verified_via: 'gossip'
-        });
-      }
-    }
   }
 
   private handleTransferEvent(peerId: string, msg: GossipMessage<TransferEventPayload>): void {
     const transfer = msg.payload;
-
-    // Check if we already have this transfer
-    if (hasTransfer(transfer.txid)) {
-      return;
-    }
+    if (hasTransfer(transfer.txid)) return;
 
     console.log(`[GossipNode] Transfer received: ${transfer.amount} ${transfer.token_id}`);
 
-    // Store transfer
     recordTransfer({
       token_id: transfer.token_id,
       from_address: transfer.from_address || null,
@@ -386,67 +268,30 @@ export class GossipNode extends EventEmitter {
       verified_via: 'gossip'
     });
 
-    // Update token supply if we have it
-    const token = getToken(transfer.token_id);
-    if (token) {
-      upsertToken({
-        token_id: transfer.token_id,
-        current_supply: token.current_supply + transfer.amount
-      });
-    }
-
     this.emit('transfer:received', transfer);
-
-    // TODO: If verifyOnChain is true, verify against WhatsOnChain
-  }
-
-  private handleHolderUpdate(peerId: string, msg: GossipMessage<HolderUpdatePayload>): void {
-    // TODO: Store holder updates
-    // For now, we'll primarily rely on transfer events
   }
 
   private handleTicketStamp(peerId: string, msg: GossipMessage<TicketStampPayload>): void {
     const stamp = msg.payload;
     console.log(`[GossipNode] Ticket stamp received for ${stamp.address} on ${stamp.path}`);
-
-    // We can verify it locally if we want
-    // verifyStamp(stamp.data, stamp.indexer_signature, stamp.indexer_pubkey);
-
-    // Emit for other services to listen
     this.emit('ticket:stamped', stamp);
   }
 
   private handleChatMessage(peerId: string, msg: GossipMessage<ChatPayload>): void {
     const chat = msg.payload;
     console.log(`[GossipNode] Chat message from ${chat.sender_address} in ${chat.channel}`);
-
-    // Emit for UI/hooks
     this.emit('chat:received', chat);
-  }
-
-  // ── Message Relay ──────────────────────────────────────────────
-
-  private relayMessage(msg: GossipMessage, excludePeer: string): void {
-    // Don't relay handshake messages
-    if ([MessageType.HELLO, MessageType.HELLO_ACK, MessageType.PING, MessageType.PONG,
-    MessageType.PEER_LIST_REQUEST, MessageType.PEER_LIST].includes(msg.type)) {
-      return;
-    }
-
-    const relayMsg = prepareForRelay(msg);
-    if (!relayMsg) return; // TTL expired or max hops
-
-    const sent = this.peerManager.broadcast(relayMsg, [excludePeer, msg.sender_id]);
-    if (sent > 0) {
-      logGossipMessage('out', null, msg.type, msg.payload);
-    }
   }
 
   // ── Public API ─────────────────────────────────────────────────
 
-  /**
-   * Announce a token we know about
-   */
+  private async publish(topic: string, msg: GossipMessage): Promise<void> {
+    if (!this.libp2p) return;
+    const data = new TextEncoder().encode(JSON.stringify(msg));
+    await (this.libp2p.services as any).pubsub.publish(topic, data);
+    logGossipMessage('out', null, msg.type, msg.payload);
+  }
+
   announceToken(tokenId: string): void {
     const token = getToken(tokenId);
     if (!token) return;
@@ -463,70 +308,53 @@ export class GossipNode extends EventEmitter {
       verified: token.verification_status === 'verified'
     });
 
-    const sent = this.peerManager.broadcast(msg);
-    console.log(`[GossipNode] Announced token ${tokenId} to ${sent} peers`);
+    this.publish(TOPICS.TOKENS, msg);
+    console.log(`[GossipNode] Announced token ${tokenId} via GossipSub`);
   }
 
-  /**
-   * Request data for a token we're interested in
-   */
   requestToken(tokenId: string): void {
     const msg = createRequestToken(this.nodeId, tokenId);
-    const sent = this.peerManager.broadcast(msg);
-    console.log(`[GossipNode] Requested token ${tokenId} from ${sent} peers`);
+    this.publish(TOPICS.TOKENS, msg); // Use tokens topic for requests for now
+    console.log(`[GossipNode] Requested token ${tokenId} via GossipSub`);
   }
 
-  /**
-   * Broadcast a transfer event
-   */
   broadcastTransfer(transfer: TransferEventPayload): void {
     const msg = createTransferEvent(this.nodeId, transfer);
-    const sent = this.peerManager.broadcast(msg);
-    console.log(`[GossipNode] Broadcast transfer to ${sent} peers`);
+    this.publish(TOPICS.TRANSFERS, msg);
+    console.log(`[GossipNode] Broadcast transfer via GossipSub`);
   }
 
-  /**
-   * Broadcast a ticket stamp
-   */
   broadcastTicketStamp(stamp: TicketStampPayload): void {
     const msg = createTicketStamp(this.nodeId, stamp);
-    const sent = this.peerManager.broadcast(msg);
-    console.log(`[GossipNode] Broadcast ticket stamp to ${sent} peers`);
+    this.publish(TOPICS.STAMPS, msg);
+    console.log(`[GossipNode] Broadcast ticket stamp via GossipSub`);
   }
 
-  /**
-   * Broadcast a chat message
-   */
   broadcastChatMessage(chat: ChatPayload): void {
     const msg = createChatMessage(this.nodeId, chat);
-    const sent = this.peerManager.broadcast(msg);
-    console.log(`[GossipNode] Broadcast chat message to ${sent} peers`);
+    this.publish(TOPICS.CHAT, msg);
+    console.log(`[GossipNode] Broadcast chat message via GossipSub`);
   }
 
-  /**
-   * Connect to a specific peer
-   */
-  async connectToPeer(host: string, port = GOSSIP_PORT): Promise<void> {
-    await this.peerManager.connect(host, port);
+  async connectToPeer(addr: string): Promise<void> {
+    if (!this.libp2p) return;
+    try {
+      const ma = multiaddr(addr);
+      await this.libp2p.dial(ma);
+      console.log(`[GossipNode] Dialled peer ${addr}`);
+    } catch (err) {
+      console.error(`[GossipNode] Failed to dial peer ${addr}:`, err);
+    }
   }
 
-  /**
-   * Get connected peer count
-   */
   getPeerCount(): number {
-    return this.peerManager.getPeerCount();
+    return this.libp2p?.getPeers().length || 0;
   }
 
-  /**
-   * Get connected peer IDs
-   */
   getConnectedPeers(): string[] {
-    return this.peerManager.getConnectedPeers();
+    return this.libp2p?.getPeers().map(p => p.toString()) || [];
   }
 
-  /**
-   * Get node ID
-   */
   getNodeId(): string {
     return this.nodeId;
   }

@@ -8,22 +8,46 @@
  * to avoid native module ABI mismatches.
  *
  * UI is loaded from:
- * - Development: http://localhost:4022 (Next.js dev server)
+ * - Development: http://localhost:4023 (Next.js dev server)
  * - Production: file:// from out/ folder (static export)
  */
 
 import { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, Notification } from 'electron';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { Path402Agent, AgentConfig } from '@path402/core';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// Set app name explicitly for single instance lock consistency
+app.setName('Path402 Client');
+
+// ── Single Instance Lock ───────────────────────────────────────────
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('[Electron] Another instance is already running. Quitting...');
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  // Focus existing window if someone tries to open a second one
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// ── Path Resolution (CJS) ──────────────────────────────────────────
+// In CJS, __dirname is natively available and points to the folder containing this script (dist/)
+// Whether in dev or packaged, we want to find files relative to this folder.
+const preloadPath = join(__dirname, 'preload.js');
+
+// appDir is used for finding resources OUTSIDE the ASAR in production
+const appDir = app.isPackaged ? dirname(app.getAppPath()) : dirname(__dirname);
 
 // ── Configuration ───────────────────────────────────────────────────
-
 const API_PORT = 4021;      // Agent API server
-const DEV_PORT = 4022;      // Next.js dev server
+const DEV_PORT = 4023;      // Next.js dev server
 const GOSSIP_PORT = 4020;   // P2P gossip
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -35,34 +59,14 @@ let tray: Tray | null = null;
 let agent: Path402Agent | null = null;
 let isQuitting = false;
 
-// ── UI Path Resolution ──────────────────────────────────────────────
+// ── Paths ───────────────────────────────────────────────────────────
+
+// ── Paths ───────────────────────────────────────────────────────────
 
 function getUIPath(): string {
   if (isDev) {
-    // Development: use Next.js dev server
     return `http://localhost:${DEV_PORT}`;
   }
-
-  // Production: try multiple possible locations for static export
-  const possiblePaths = [
-    // Inside app bundle (macOS)
-    join(app.getAppPath(), '..', 'web', 'out', 'index.html'),
-    // Inside resources
-    join(process.resourcesPath || '', 'web', 'out', 'index.html'),
-    // Relative to electron dist
-    join(__dirname, '..', '..', 'web', 'out', 'index.html'),
-    // Monorepo structure
-    join(__dirname, '..', '..', '..', 'web', 'out', 'index.html'),
-  ];
-
-  for (const p of possiblePaths) {
-    if (existsSync(p)) {
-      return `file://${p}`;
-    }
-  }
-
-  // Fallback to API server (old behavior)
-  console.log('[Electron] No static UI found, falling back to API server');
   return `http://localhost:${API_PORT}`;
 }
 
@@ -76,12 +80,50 @@ async function startAgent(): Promise<void> {
 
   console.log('[Electron] Starting embedded agent...');
 
-  const config: AgentConfig = {
+  // EXPLICIT SCHEMA DISCOVERY
+  let schemaPath = join(__dirname, 'schema.sql'); // Common in dev
+  if (!existsSync(schemaPath)) {
+    // Try packaged location
+    const packagedSchema = join(process.resourcesPath || '', 'db', 'schema.sql');
+    if (existsSync(packagedSchema)) {
+      schemaPath = packagedSchema;
+    } else {
+      // Try relative to appDir
+      const relativeSchema = join(appDir, 'dist', 'schema.sql');
+      if (existsSync(relativeSchema)) {
+        schemaPath = relativeSchema;
+      }
+    }
+  }
+
+  // EXPLICIT UI DISCOVERY
+  let uiPath: string | undefined = undefined;
+  if (!isDev) {
+    const possibleUIPaths = [
+      join(app.getAppPath(), '..', 'web', 'out'),
+      join(process.resourcesPath || '', 'web', 'out'),
+      join(appDir, 'web', 'out'),
+      join(dirname(app.getAppPath()), 'web', 'out')
+    ];
+    for (const p of possibleUIPaths) {
+      if (existsSync(join(p, 'index.html'))) {
+        uiPath = p;
+        break;
+      }
+    }
+  }
+
+  console.log('[Electron] Using schema at:', schemaPath);
+  if (uiPath) console.log('[Electron] Using static UI at:', uiPath);
+
+  const config: any = {
     gossipPort: GOSSIP_PORT,
     guiEnabled: true,
     guiPort: API_PORT,
+    guiUiPath: uiPath,
     speculationEnabled: false,
-    autoAcquire: false
+    autoAcquire: false,
+    schemaPath // Pass explicitly
   };
 
   agent = new Path402Agent(config);
@@ -100,9 +142,9 @@ async function startAgent(): Promise<void> {
   agent.on('status', (status) => {
     // Update tray with live status
     updateTrayMenu({
-      peers: status.peersConnected || 0,
-      tokens: status.tokensKnown || 0,
-      pnl: status.totalPnL || 0
+      peers: (status as any).peersConnected || 0,
+      tokens: (status as any).tokensKnown || 0,
+      pnl: (status as any).totalPnL || 0
     });
   });
 
@@ -111,12 +153,17 @@ async function startAgent(): Promise<void> {
   } catch (err) {
     console.error('[Electron] Failed to start agent:', err);
     agent = null;
-
-    if (!isQuitting) {
-      // Retry after delay
-      setTimeout(() => startAgent(), 3000);
-    }
+    // Don't retry aggressively if it fails - let the user see the log or restart manually
   }
+}
+
+let isCreatingWindow = false;
+function safeCreateWindow() {
+  if (mainWindow || isCreatingWindow) return;
+  isCreatingWindow = true;
+  createWindow();
+  createTray();
+  isCreatingWindow = false;
 }
 
 async function stopAgent(): Promise<void> {
@@ -141,7 +188,7 @@ function createWindow(): void {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: join(__dirname, 'preload.js'),
+      preload: preloadPath,
       // Allow loading local files
       webSecurity: !isDev
     },
@@ -310,7 +357,7 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
 
 function getAppIcon(): Electron.NativeImage {
   // Try to load from build resources first
-  const iconPath = join(__dirname, '..', '..', '..', 'build', 'icon.png');
+  const iconPath = join(appDir, '..', '..', '..', 'build', 'icon.png');
   if (existsSync(iconPath)) {
     return nativeImage.createFromPath(iconPath);
   }
@@ -327,8 +374,8 @@ function getIconDataURL(size: number): string {
   // Simple cyan circle with $ - replace with proper icon asset later
   const canvas = `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="${size/2}" cy="${size/2}" r="${size/2 - 1}" fill="#00d4ff"/>
-      <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="${size/2}" fill="#09090b">$</text>
+      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1}" fill="#00d4ff"/>
+      <text x="${size / 2}" y="${size / 2 + size / 6}" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="${size / 2}" fill="#09090b">$</text>
     </svg>
   `;
   return `data:image/svg+xml;base64,${Buffer.from(canvas).toString('base64')}`;
@@ -367,55 +414,70 @@ function setupIPC(): void {
   });
 }
 
+// ── Error Handling ──────────────────────────────────────────────────
+process.on('uncaughtException', (error) => {
+  console.error('[Electron] Uncaught Exception:', error);
+  const { dialog } = require('electron');
+  dialog.showErrorBox('Critical Error', error.stack || error.message);
+});
+
 // ── App Lifecycle ───────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
   // Start the embedded agent
-  await startAgent();
+  try {
+    await startAgent();
+  } catch (err) {
+    console.error('[Electron] Startup error:', err);
+  }
 
   // Wait a moment for API server to be ready
   await new Promise(resolve => setTimeout(resolve, 1000));
 
   // Create window
   console.log('[Electron] Creating window...');
-  createWindow();
-  createTray();
+  safeCreateWindow();
   setupIPC();
 });
 
+// Ensure clean exit
+app.on('before-quit', async (e) => {
+  if (isQuitting) return;
+
+  console.log('[Electron] Performing final cleanup...');
+  isQuitting = true;
+
+  try {
+    if (agent) {
+      await agent.stop();
+    }
+  } catch (err) {
+    console.error('[Electron] Cleanup error:', err);
+  }
+
+  // Force actual process termination to clear ports
+  process.exit(0);
+});
+
 app.on('window-all-closed', () => {
-  // Don't quit on macOS when window closes
+  // On macOS it's common for applications to stay open until the user quits explicitly
   if (process.platform !== 'darwin') {
-    isQuitting = true;
     app.quit();
   }
 });
 
 app.on('activate', () => {
   if (mainWindow === null) {
-    createWindow();
+    safeCreateWindow();
   } else {
     mainWindow.show();
   }
-
-  if (process.platform === 'darwin') {
-    app.dock?.show();
-  }
 });
 
-app.on('before-quit', () => {
-  isQuitting = true;
-  stopAgent();
-});
-
-// Handle certificate errors for localhost
+// Handle certificate errors (for local dev devtools etc)
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-  if (url.startsWith('http://localhost')) {
-    event.preventDefault();
-    callback(true);
-  } else {
-    callback(false);
-  }
+  event.preventDefault();
+  callback(true);
 });
 
 console.log('[Electron] $402 Client starting...');

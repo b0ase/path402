@@ -4,7 +4,7 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  // For Electron/Capacitor compatibility
+  // For compatibility with static serving
   trailingSlash: true,
   // Disable server-side features for static export
   experimental: {

@@ -18,7 +18,8 @@ const config: Config = {
         }
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+        sans: ['var(--font-inter)', 'sans-serif'],
+        mono: ['var(--font-jetbrains-mono)', 'JetBrains Mono', 'Fira Code', 'monospace']
       }
     }
   },

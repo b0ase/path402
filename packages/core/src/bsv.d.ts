@@ -1,18 +1,14 @@
 declare module 'bsv' {
-    export class Address {
-        static fromString(address: string): Address;
-        toString(): string;
-    }
+    export const PrivKey: any;
+    export const PubKey: any;
+    export const Address: any;
+    export const Script: any;
+    export const Hash: any;
+    export const Ecdsa: any;
+    export const Sig: any;
+    export const Transaction: any;
+    export const OpCode: any;
 
-    export class Script {
-        static buildPublicKeyHashOut(address: Address): Script;
-        toHex(): string;
-    }
-
-    export class PrivateKey {
-        static fromRandom(): PrivateKey;
-        static fromWIF(wif: string): PrivateKey;
-        toAddress(): Address;
-        toWIF(): string;
-    }
+    // Legacy support
+    export const PrivateKey: any;
 }

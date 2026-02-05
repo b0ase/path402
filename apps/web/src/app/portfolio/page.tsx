@@ -2,6 +2,9 @@
 
 import { Navigation } from '@/components/Navigation';
 import { usePortfolio, useStatus } from '@/hooks/useAPI';
+import { PageContainer } from '@/components/PageContainer';
+
+import { PageHeader } from '@/components/PageHeader';
 
 function formatSats(sats: number): string {
   if (Math.abs(sats) >= 1000000) {
@@ -22,114 +25,114 @@ export default function PortfolioPage() {
   const totalCost = portfolio?.reduce((sum, h) => sum + h.total_spent_sats, 0) || 0;
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white">
+    <PageContainer>
       <Navigation />
 
-      <main className="w-full px-4 md:px-8 py-8">
-        {/* Header */}
-        <div className="mb-12 border-b border-gray-200 dark:border-gray-800 pb-8">
-          <div className="flex flex-col md:flex-row md:items-end gap-6 mb-4">
-            <div className="bg-gray-100 dark:bg-zinc-900/50 w-16 h-16 md:w-24 md:h-24 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 self-start text-black dark:text-white">
-              <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 16l4-4 4 4 5-5" />
-              </svg>
-            </div>
-            <div className="flex items-end gap-4">
-              <h1 className="text-4xl md:text-6xl font-bold tracking-tighter leading-none">
-                PORTFOLIO
-              </h1>
-              <div className="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-[0.2em]">
-                HOLDINGS
-              </div>
-            </div>
-          </div>
-          <p className="text-gray-400 max-w-2xl text-lg leading-relaxed">
-            Your token holdings and performance
-          </p>
-        </div>
+      <main className="w-full px-4 md:px-8 py-16 max-w-[1920px] mx-auto">
+        <PageHeader
+          title="PORTFOLIO"
+          extension=".SYS"
+          superTitle={
+            <>
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Main Ledger / Holdings
+            </>
+          }
+          description={
+            <>
+              <b>Asset Performance.</b> Real-time valuation of acquired content tokens.
+            </>
+          }
+          icon="📊"
+        />
 
-        {/* Portfolio Summary - INDUSTRIAL Grid */}
+        {/* Portfolio Summary - Sharp Grid */}
         <section className="mb-12">
-          <div className="text-[10px] font-mono text-gray-500 uppercase tracking-[0.2em] mb-4">Summary</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border border-gray-200 dark:border-gray-800">
-            <div className="border-r border-b md:border-b-0 border-gray-200 dark:border-gray-800 p-6 bg-gray-50 dark:bg-zinc-900/30">
-              <div className="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em] mb-2">Total Value</div>
-              <div className="text-3xl font-bold">{formatSats(totalValue)} SAT</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-4 border-b border-zinc-200 dark:border-zinc-900 pb-2">
+            Ledger Summary
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
+            <div className="border-r border-b md:border-b-0 border-zinc-200 dark:border-zinc-800 p-8">
+              <div className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-2">Total Value</div>
+              <div className="text-3xl md:text-4xl font-black tracking-tighter">{formatSats(totalValue)} <span className="text-base text-zinc-500 font-normal">SAT</span></div>
             </div>
-            <div className="border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 p-6 bg-gray-50 dark:bg-zinc-900/30">
-              <div className="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em] mb-2">Total Cost</div>
-              <div className="text-3xl font-bold text-gray-500">{formatSats(totalCost)} SAT</div>
+            <div className="border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 p-8">
+              <div className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-2">Total Cost</div>
+              <div className="text-3xl md:text-4xl font-black tracking-tighter text-zinc-400">{formatSats(totalCost)} <span className="text-base text-zinc-500 font-normal">SAT</span></div>
             </div>
-            <div className="border-r border-gray-200 dark:border-gray-800 p-6 bg-gray-50 dark:bg-zinc-900/30">
-              <div className="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em] mb-2">Total P&L</div>
-              <div className={`text-3xl font-bold ${totalPnL >= 0 ? '' : 'text-gray-500'}`}>
-                {totalPnL >= 0 ? '+' : ''}{formatSats(totalPnL)} SAT
+            <div className="border-r border-zinc-200 dark:border-zinc-800 p-8">
+              <div className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-2">Net P&L</div>
+              <div className={`text-3xl md:text-4xl font-black tracking-tighter ${totalPnL >= 0 ? 'text-black dark:text-white' : 'text-red-500'}`}>
+                {totalPnL >= 0 ? '+' : ''}{formatSats(totalPnL)} <span className="text-base text-zinc-500 font-normal">SAT</span>
               </div>
             </div>
-            <div className="p-6 bg-gray-50 dark:bg-zinc-900/30">
-              <div className="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em] mb-2">Holdings</div>
-              <div className="text-3xl font-bold">{portfolio?.length || 0}</div>
+            <div className="p-8">
+              <div className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-2">Asset Count</div>
+              <div className="text-3xl md:text-4xl font-black tracking-tighter">{portfolio?.length || 0}</div>
             </div>
           </div>
         </section>
 
-        {/* Holdings Table - INDUSTRIAL */}
+        {/* Holdings Table - Industrial */}
         <section>
-          <div className="text-[10px] font-mono text-gray-500 uppercase tracking-[0.2em] mb-4">Holdings</div>
-          <div className="border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <table className="w-full">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-4 border-b border-zinc-200 dark:border-zinc-900 pb-2">
+            Asset Inventory
+          </div>
+          <div className="border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-zinc-900/30">
-                  <th className="text-left py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Token</th>
-                  <th className="text-right py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Balance</th>
-                  <th className="text-right py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Cost</th>
-                  <th className="text-right py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Revenue</th>
-                  <th className="text-right py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">P&L</th>
-                  <th className="text-right py-3 px-4 text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Action</th>
+                <tr className="bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800">
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500">Token ID</th>
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500 text-right">Balance</th>
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500 text-right">Cost Basis</th>
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500 text-right">Revenue</th>
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500 text-right">P&L</th>
+                  <th className="py-4 px-6 text-[9px] uppercase tracking-widest font-bold text-zinc-500 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500">
-                      Loading portfolio...
+                    <td colSpan={6} className="py-12 text-center text-zinc-500 text-xs font-mono uppercase tracking-widest">
+                      Processing Ledger...
                     </td>
                   </tr>
                 ) : portfolio && portfolio.length > 0 ? (
                   portfolio.map((holding) => (
                     <tr
                       key={holding.token_id}
-                      className="border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-900/50"
+                      className="group hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
                     >
-                      <td className="py-4 px-4">
-                        <div className="font-bold">{holding.name}</div>
-                        <div className="text-[10px] text-gray-500 font-mono truncate max-w-[200px]">
+                      <td className="py-4 px-6">
+                        <div className="font-bold text-sm tracking-tight">{holding.name}</div>
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
                           {holding.token_id}
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right font-mono">
+                      <td className="py-4 px-6 text-right font-mono text-sm">
                         {holding.balance.toLocaleString()}
                       </td>
-                      <td className="py-4 px-4 text-right text-gray-500">
-                        {formatSats(holding.total_spent_sats)} SAT
+                      <td className="py-4 px-6 text-right font-mono text-sm text-zinc-500">
+                        {formatSats(holding.total_spent_sats)}
                       </td>
-                      <td className="py-4 px-4 text-right">
-                        {formatSats(holding.total_revenue_sats)} SAT
+                      <td className="py-4 px-6 text-right font-mono text-sm text-zinc-500">
+                        {formatSats(holding.total_revenue_sats)}
                       </td>
-                      <td className={`py-4 px-4 text-right font-bold ${holding.pnl_sats >= 0 ? '' : 'text-gray-500'}`}>
-                        {holding.pnl_sats >= 0 ? '+' : ''}{formatSats(holding.pnl_sats)} SAT
+                      <td className={`py-4 px-6 text-right font-mono text-sm font-bold ${holding.pnl_sats >= 0 ? 'text-black dark:text-white' : 'text-zinc-500'}`}>
+                        {holding.pnl_sats >= 0 ? '+' : ''}{formatSats(holding.pnl_sats)}
                       </td>
-                      <td className="py-4 px-4 text-right">
-                        <button className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase tracking-wider hover:bg-gray-800 dark:hover:bg-gray-200">
-                          Serve
+                      <td className="py-4 px-6 text-right">
+                        <button className="px-4 py-2 border border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all">
+                          MANAGE
                         </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500">
-                      No holdings yet. Visit the Market to acquire tokens.
+                    <td colSpan={6} className="py-16 text-center">
+                      <div className="text-zinc-400 mb-2 text-2xl">∅</div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-zinc-500">Ledger Empty</div>
                     </td>
                   </tr>
                 )}
@@ -138,6 +141,6 @@ export default function PortfolioPage() {
           </div>
         </section>
       </main>
-    </div>
+    </PageContainer>
   );
 }

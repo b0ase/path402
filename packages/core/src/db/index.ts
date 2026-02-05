@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import { mkdirSync, existsSync } from 'fs';
 import { homedir } from 'os';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const _dirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ function getDbPath(): string {
 /**
  * Initialize the local SQLite database
  */
-export function initLocalDb(dbPath?: string): Database.Database {
+export function initLocalDb(dbPath?: string, schemaPath?: string): Database.Database {
   if (db) return db;
 
   const path = dbPath || getDbPath();
@@ -147,9 +147,30 @@ export function initLocalDb(dbPath?: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  // Run schema
-  const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
-  db.exec(schema);
+  // Load schema
+  let finalSchemaPath = schemaPath;
+
+  if (!finalSchemaPath) {
+    // Default fallback logic only for development
+    const possiblePaths = [
+      join(_dirname, 'schema.sql'),
+      join(_dirname, 'db', 'schema.sql'),
+      join(_dirname, 'dist', 'db', 'schema.sql')
+    ];
+    for (const p of possiblePaths) {
+      if (existsSync(p)) {
+        finalSchemaPath = p;
+        break;
+      }
+    }
+  }
+
+  if (finalSchemaPath && existsSync(finalSchemaPath)) {
+    const schema = readFileSync(finalSchemaPath, 'utf-8');
+    db.exec(schema);
+  } else if (!dbPath) { // If it's a new DB and no schema found, that's an error
+    console.warn('[DB] Warning: No schema.sql found at:', finalSchemaPath || 'default paths');
+  }
 
   console.log(`[DB] Initialized at ${path}`);
   return db;

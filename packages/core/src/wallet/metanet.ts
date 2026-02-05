@@ -1,6 +1,9 @@
 import { ChainWallet, WalletBalance, Transaction, FeeEstimate } from './types.js';
-import { createAction, createSignature, getIdentity } from '@babbage/sdk';
-import { Script, Address } from 'bsv';
+import bsv from 'bsv';
+import babbage from '@babbage/sdk';
+
+const { Script, Address } = bsv;
+const { createAction, createSignature, getIdentity } = babbage;
 
 // WOC API for read operations (since Babbage is mostly a signer/actor)
 const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/main';

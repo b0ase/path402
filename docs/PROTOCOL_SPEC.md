@@ -24,111 +24,198 @@ $402 is a protocol for tokenized attention markets. Every participant mints thei
 
 ---
 
+## BSV-21 Token Mint Specification
+
+### Standard Mint Transaction
+
+$402 tokens are minted using the **BSV-21 standard** (single-transaction deploy+mint) with protocol-specific extensions:
+
+```json
+{
+  "p": "bsv-21",
+  "op": "deploy+mint",
+  "id": "<txid>:<vout>",
+  "amt": "100",
+  "sym": "ALICE",
+  "path402": {
+    "paymentAddress": "1AliceXYZ...",
+    "issuerPubkey": "03abc123...",
+    "dividendRate": 5,
+    "domain": "alice.com",
+    "accessRate": 1,
+    "protocol": "path402",
+    "version": "3.0.0"
+  }
+}
+```
+
+### Field Definitions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `p` | string | ✓ | Protocol identifier (`bsv-21`) |
+| `op` | string | ✓ | Operation (`deploy+mint` for single-tx) |
+| `id` | string | ✓ | Token ID (`<txid>:<vout>` of mint output) |
+| `amt` | string | ✓ | Total supply of tokens |
+| `sym` | string |  | Display symbol (e.g., `ALICE`) |
+| `path402.paymentAddress` | string | ✓ | **Canonical payment address** for all token sales |
+| `path402.issuerPubkey` | string | ✓ | Public key for signature verification |
+| `path402.dividendRate` | number | ✓ | % of ALL sales → staker pool (default: 5) |
+| `path402.domain` | string |  | DNS binding (optional) |
+| `path402.accessRate` | number |  | Tokens per second (default: 1) |
+| `path402.protocol` | string | ✓ | Protocol identifier (`path402`) |
+| `path402.version` | string | ✓ | Protocol version |
+
+### Payment Routing Mechanism
+
+**All token sales are routed through the canonical `paymentAddress`:**
+
+```
+Buyer purchases token from Seller for 2 sats
+  ↓
+Payment sent TO: paymentAddress (from mint inscription)
+WITH metadata: {"seller": "seller_address", "amount": "2"}
+  ↓
+Protocol automatically splits:
+  ├─ (100 - dividendRate)% → seller_address
+  └─ dividendRate% → dividend pool (distributed to stakers)
+```
+
+**Example:**
+```
+Token sold for 200 sats, dividendRate = 5%
+  ├─ 190 sats → Seller (market-making profit)
+  └─ 10 sats → Staker pool
+      └─ Distributed proportionally to all stakers
+```
+
+### DNS Binding (Optional)
+
+If `domain` is specified, the issuer should publish a TXT record:
+
+```
+TXT record for alice.com:
+  path402-token=<tokenId>:<paymentAddress>
+
+Example:
+  path402-token=abc123def:0:1AliceXYZ...
+```
+
+This enables human-friendly discovery:
+```
+alice.com → TXT lookup → $ALICE token → 1AliceXYZ... (payment address)
+```
+
+---
+
 ## Token Economics
 
 ### Supply Model
-
-```
-Per-person supply: 1,000,000,000 tokens (1 billion)
-No minting after genesis
-No burning - tokens circulate
-```
-
-### Access Pricing
-
-```
-Base rate: 1 token = 1 second of connection
-Configurable per creator: 1-100 tokens/second
-Multicast: Same rate, split across viewers (or flat per viewer)
-```
-
-### The Economic Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  BUYER                    SELLER              CREATOR       │
-│    │                        │                    │          │
-│    │──── Cash ─────────────→│                    │          │
-│    │←─── $CREATOR tokens ───│                    │          │
-│    │                                             │          │
-│    │──── $CREATOR tokens (to connect) ──────────→│          │
-│    │←─── Content/Call/Stream ───────────────────│          │
-│                                                             │
-│  Result: Creator has CASH (from sales) + TOKENS (returned)  │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Creator Float Control
-
-| Strategy | Token Float | Price | Result |
-|----------|-------------|-------|--------|
-| Exclusive | Low (hold most tokens) | High | Premium access, fewer connections |
-| Accessible | High (sell freely) | Low | Mass audience, lower per-connection value |
-| Balanced | Medium | Market-driven | Organic price discovery |
-
----
-
-## Social Scaling
-
-### The Friend Investment Model
-
-Users naturally invest in people they care about:
-
-```
-I value my friend
-       ↓
-I buy MORE tokens than I need
-       ↓
-I stake tokens (earn from their success)
-       ↓
-I complete KYC (because I trust them)
-       ↓
-They succeed → I profit + maintain access
-       ↓
-Network grows through real relationships
-```
-
-### Why This Works
-
-1. **Aligned incentives** - Supporting friends = potential profit
-2. **Natural liquidity** - Social circles create baseline markets
-3. **Trust bootstrapping** - KYC happens where trust exists
-4. **Anti-spam** - Connecting costs tokens (economic friction)
-5. **No platform rent** - Direct peer-to-peer settlement
-
----
-
-## Staking & Dividends
-
-### Staking Mechanism
-
-```
-Stake $CREATOR tokens
-       ↓
-Receive share of creator's revenue
-       ↓
-Revenue = all token purchases for their content
-       ↓
-Dividend = (your_stake / total_staked) × revenue × dividend_rate
-```
-
-### Dividend Claims & KYC
-
-- **Basic access**: No KYC required (permissionless)
-- **Dividend claims**: KYC required
-- **Identity anchor**: Phone contract, government ID, or trusted verifier
-- **Result**: Voluntary identity layer where money flows out
-
-### Revenue Split (Default)
-
-```
-Creator revenue from token sales:
-├── 70% → Creator wallet
-├── 20% → Staker dividend pool
-└── 10% → Protocol treasury ($402 token holders)
-```
+ 
+ ```
+ Supply: Creator defined (e.g. 1M, 1B, or dynamic)
+ Minting: Configurable policies (Genesis-only or inflation schedule)
+ Mechanics: Standard BSV-20
+ ```
+ 
+ ### Access Pricing
+ 
+ ```
+ Base rate: 1 token = 1 second of connection
+ Configurable per creator: 1-100 tokens/second
+ Multicast: Same rate, split across viewers (or flat per viewer)
+ ```
+ 
+ ### The Economic Flow
+ 
+ ```
+ ┌─────────────────────────────────────────────────────────────┐
+ │                                                             │
+ │  BUYER                    SELLER              CREATOR       │
+ │    │                        │                    │          │
+ │    │──── Cash ─────────────→│                    │          │
+ │    │←─── $CREATOR tokens ───│                    │          │
+ │    │                                             │          │
+ │    │──── $CREATOR tokens (to connect) ──────────→│          │
+ │    │←─── Content/Call/Stream ───────────────────│          │
+ │                                                             │
+ │  Result: Creator has CASH (from sales) + TOKENS (returned)  │
+ │                                                             │
+ └─────────────────────────────────────────────────────────────┘
+ ```
+ 
+ ### Creator Float Control
+ 
+ | Strategy | Token Float | Price | Result |
+ |----------|-------------|-------|--------|
+ | Exclusive | Low (hold most tokens) | High | Premium access, fewer connections |
+ | Accessible | High (sell freely) | Low | Mass audience, lower per-connection value |
+ | Balanced | Medium | Market-driven | Organic price discovery |
+ 
+ ---
+ 
+ ## Social Scaling
+ 
+ ### The Friend Investment Model
+ 
+ Users naturally invest in people they care about:
+ 
+ ```
+ I value my friend
+        ↓
+ I buy MORE tokens than I need
+        ↓
+ I stake tokens (earn from their success)
+        ↓
+ I complete KYC (because I trust them)
+        ↓
+ They succeed → I profit + maintain access
+        ↓
+ Network grows through real relationships
+ ```
+ 
+ ### Why This Works
+ 
+ 1. **Aligned incentives** - Supporting friends = potential profit
+ 2. **Natural liquidity** - Social circles create baseline markets
+ 3. **Trust bootstrapping** - KYC happens where trust exists
+ 4. **Anti-spam** - Connecting costs tokens (economic friction)
+ 5. **No platform rent** - Direct peer-to-peer settlement
+ 
+ ---
+ 
+ ## Staking & Dividends
+ 
+ ### Staking Mechanism
+ 
+ ```
+ Stake $CREATOR tokens + Run Node (Client)
+        ↓
+ Serve Content to Users
+        ↓
+ Revenue = Dividend Check
+        ↓
+ Dividend = (your_stake / total_staked) × revenue
+ ```
+ 
+ ### Dividend Claims & KYC
+ 
+ - **Basic access**: No KYC required (permissionless)
+ - **Dividend claims**: Issuer-defined (Optional KYC)
+ - **Identity anchor**: Client integrates with verifiers (e.g., Veriff)
+ - **Result**: Voluntary identity layer where money flows out
+ 
+ ### Revenue Split
+ 
+ ```
+ Creator revenue from token sales:
+ ├── Retained by Creator (Owner of tokens)
+ └── Distributed to Stakers (Dividends)
+ 
+ * No protocol treasury fee.
+ * No enforced indexer tax.
+ * 100% of dividends go to active stakers.
+ ```
 
 ---
 
@@ -373,71 +460,68 @@ Clients SHOULD implement the **BRC-100** wallet interface, allowing $402 applica
 ---
 
 ## Ticket Stamp Chains: The Indexer Overlay
-
-**The Core Innovation**: Tickets accumulate cryptographic stamps as they're validated and used. This creates a trust layer that solves the indexer incentive problem through **BRC-22/24 Overlay** dynamics.
-
-### The Problem: Indexer Incentives
-When a user buys a ticket, indexers must validate the UTXO. This costs resources. If creators keep 100% of the revenue, indexers have no incentive to provide high-speed verification.
-
-### The Solution: Paid Indexing (95/5 Split)
-Payment is split between creator and indexer at the point of verification.
-```
-Ticket Price: 1000 sats
-  ├─ Creator: 950 sats (95%)
-  └─ Indexer Fee: 50 sats (5%)
-```
-
-### Stamp Chain as Social Proof
-Every time an indexer verifies a ticket access, they generate an **Overlay Entry** (signed validation). These "Stamps" are gossiped across the network as Proof of Serve.
-
-**Security Model (0-conf)**:
-- **Payment Attempt**: Receipt of a transaction to the creator's address.
-- **Acceptance Policy**: Indexers may use 0-conf risk management (double-spend monitoring) to grant immediate access for low-value tickets. High-value tickets may require block confirmation.
-
-### Discovery via BRC-24
-The $402 gossip network acts as a **BRC-24 Lookup Service**. Clients can query the network for the "most stamped" paths to discover high-quality, viral content.
-
-**Stamp Chain Structure**:
-```json
-{
-  "stampChain": [
-    {
-      "seq": 1,
-      "indexer": "indexer-a.com",
-      "owner": "harry_pubkey",
-      "blockHeight": 837492,
-      "feePaid": 50,
-      "signature": "304402..."
-    }
-  ]
-}
-```
-
-### Trust Accumulation
-
-Tickets gain value as stamp chains grow:
-
-```
-Fresh ticket (0 stamps):     1000 sats
-After 100 stamps:            1300 sats (+30% trust premium)
-After 1000 stamps:           2000 sats (+100% viral premium)
-```
-
-### Network Effects
-
-1. **Economic Filtering**: Spam gets ignored (no fee potential), viral content attracts indexers
-2. **Content Discovery**: Sort by stamp count = quality ranking
-3. **Indexer Competition**: Popular content = higher revenue = better service
-4. **Creator Incentives**: Viral content accumulates stamps faster, increasing secondary market value
-
-### Why This Works
-
-- **No Bootstrap Token Needed**: Stamps ARE the proof of work
-- **Pure Bitcoin Economics**: Fees flow naturally from users → creators + indexers
-- **Self-Sustaining**: Market forces optimize service quality
-- **Viral Dynamics**: Positive feedback loop between popularity and infrastructure
-
-**See**: [STAMP_CHAIN_SPEC.md](./STAMP_CHAIN_SPEC.md) for complete technical specification.
+ 
+ **The Core Innovation**: Tickets accumulate cryptographic stamps as they're validated and used. This creates a trust layer that solves the indexer incentive problem through **Proof of Serve**.
+ 
+ ### The Problem: Indexer Incentives
+ When a user buys a ticket, indexers must validate the UTXO. This costs resources. Why do they do it?
+ 
+ ### The Solution: Staking-as-Service
+ Indexers are **Staked Nodes**. They buy and stake the creator's token to join the network.
+ - **They Index**: To validate transactions and serve content.
+ - **They Earn**: Dividends from the accumulated revenue of the token they stake.
+ 
+ **Nodes buy tokens to serve them.** The more they serve (validate), the more valuable the network, and the more yield their stake generates (if they are KYC'd).
+ 
+ ### Stamp Chain as Social Proof
+ Every time an indexer verifies a ticket access, they generate an **Overlay Entry** (signed validation). These "Stamps" are gossiped across the network as Proof of Serve.
+ 
+ **Security Model (0-conf)**:
+ - **Payment Attempt**: Receipt of a transaction to the creator's address.
+ - **Acceptance Policy**: Indexers may use 0-conf risk management (double-spend monitoring) to grant immediate access for low-value tickets. High-value tickets may require block confirmation.
+ 
+ ### Discovery via BRC-24
+ The $402 gossip network acts as a **BRC-24 Lookup Service**. Clients can query the network for the "most stamped" paths to discover high-quality, viral content.
+ 
+ **Stamp Chain Structure**:
+ ```json
+ {
+   "stampChain": [
+     {
+       "seq": 1,
+       "indexer": "indexer-a.com",
+       "owner": "harry_pubkey",
+       "blockHeight": 837492,
+       "signature": "304402..."
+     }
+   ]
+ }
+ ```
+ 
+ ### Trust Accumulation
+ 
+ Tickets gain value as stamp chains grow:
+ 
+ ```
+ Fresh ticket (0 stamps):     Low trust
+ After 100 stamps:            High trust (Validated by many nodes)
+ ```
+ 
+ ### Network Effects
+ 
+ 1. **Economic Filtering**: Spam gets ignored.
+ 2. **Content Discovery**: Sort by stamp count = quality ranking.
+ 3. **Indexer Competition**: Staked nodes compete to provide faster validation to protect their investment.
+ 4. **Creator Incentives**: Viral content accumulates stamps faster.
+ 
+ ### Why This Works
+ 
+ - **No Bootstrap Token Needed**: Stamps ARE the proof of work.
+ - **Pure Economics**: Fees flow to the Creator. Stakers (Nodes) earn dividends.
+ - **Self-Sustaining**: Market forces optimize service quality.
+ - **Viral Dynamics**: Positive feedback loop between popularity and infrastructure.
+ 
+ **See**: [STAMP_CHAIN_SPEC.md](./STAMP_CHAIN_SPEC.md) for complete technical specification.
 
 ---
 

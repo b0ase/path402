@@ -6,13 +6,12 @@ import {
   ServeEvent
 } from "../types.js";
 import { calculatePrice, estimateROI } from "./pricing.js";
+import { recordDivvyPayment } from "./database.js";
 import {
   DEFAULT_MAX_PRICE_PER_ITEM,
   DEFAULT_SESSION_BUDGET
 } from "../constants.js";
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const bsv = require('bsv');
+import bsv from 'bsv';
 
 // Session state (in production: persistent store + wallet integration)
 let walletState: WalletState = {
@@ -186,12 +185,14 @@ export function evaluateBudget(
 
 /**
  * Record a token acquisition (debit balance, store token)
+ * Also records payment to divvy for dividend distribution
  */
 export function recordAcquisition(
   dollarAddress: string,
   price: number,
   supply: number,
-  issuer: string
+  issuer: string,
+  payerInfo?: { address?: string; handle?: string }
 ): Dollar402Token {
   const token: Dollar402Token = {
     id: `tok_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -206,6 +207,20 @@ export function recordAcquisition(
   walletState.tokens.push(token);
   walletState.balance -= price;
   walletState.totalSpent += price;
+
+  // Record payment to divvy for dividend distribution
+  // Extract domain/path from dollarAddress (e.g., "$b0ase.com/$blog" -> "b0ase.com")
+  const assetIdentifier = dollarAddress.replace(/^\$/, '').split('/')[0];
+  if (assetIdentifier && price > 0) {
+    recordDivvyPayment(
+      assetIdentifier,
+      token.id, // Use token ID as transaction reference
+      price,
+      payerInfo
+    ).catch(err => {
+      console.warn('[Wallet] Failed to record divvy payment:', err);
+    });
+  }
 
   return token;
 }

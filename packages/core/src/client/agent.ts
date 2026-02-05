@@ -11,6 +11,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { join } from 'path';
 import { GossipNode, GossipNodeConfig } from '../gossip/node.js';
 import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculation/engine.js';
 import { IntelligenceProvider } from '../intelligence/provider.js';
@@ -53,6 +54,7 @@ export interface AgentConfig {
   // GUI
   guiEnabled?: boolean;
   guiPort?: number;
+  guiUiPath?: string;
 }
 
 export interface AgentStatus {
@@ -110,9 +112,9 @@ export class Path402Agent extends EventEmitter {
 
     // Initialize database
     const dbPath = this.config.dataDir
-      ? `${this.config.dataDir}/pathd.db`
+      ? join(this.config.dataDir, 'pathd.db')
       : undefined;
-    initLocalDb(dbPath);
+    initLocalDb(dbPath, (this.config as any).schemaPath);
 
     const nodeId = getNodeId();
     console.log(`[Agent] Node ID: ${nodeId.slice(0, 16)}...`);
@@ -131,7 +133,7 @@ export class Path402Agent extends EventEmitter {
 
     // Start GUI if enabled
     if (this.config.guiEnabled !== false) {
-      this.guiServer = new GUIServer(this, this.config.guiPort || 4021);
+      this.guiServer = new GUIServer(this, this.config.guiPort || 4021, this.config.guiUiPath);
       this.guiServer.start();
     }
 
@@ -311,11 +313,17 @@ export class Path402Agent extends EventEmitter {
   /**
    * Connect to a specific peer
    */
-  async connectToPeer(host: string, port = 4020): Promise<void> {
+  async connectToPeer(hostOrAddr: string, port = 4020): Promise<void> {
     if (!this.gossipNode) {
       throw new Error('Gossip not initialized');
     }
-    await this.gossipNode.connectToPeer(host, port);
+
+    // If it's a multiaddr, use it directly, otherwise format it
+    const addr = hostOrAddr.startsWith('/')
+      ? hostOrAddr
+      : `/ip4/${hostOrAddr}/tcp/${port}`;
+
+    await this.gossipNode.connectToPeer(addr);
   }
 
   /**

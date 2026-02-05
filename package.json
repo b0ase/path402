@@ -1,6 +1,6 @@
 {
   "name": "path402-monorepo",
-  "version": "1.3.1",
+  "version": "3.0.0",
   "private": true,
   "description": "Path402 monorepo - MCP server, desktop client, and mobile apps",
   "type": "module",
@@ -18,15 +18,23 @@
     "build:mcp": "pnpm --filter path402 build",
     "dev:core": "pnpm --filter @path402/core dev",
     "start:mcp": "pnpm --filter path402 start",
+    "dev:desktop": "lsof -ti:4020,4021,4022,4023 | xargs kill -9 2>/dev/null || true && concurrently --kill-others --raw \"pnpm --filter @path402/web dev\" \"sleep 4 && pnpm --filter @path402/desktop build && pnpm --filter @path402/desktop start\"",
     "generate-pdf": "tsx scripts/generate-pdf.ts"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
     "@types/node": "^22.0.0",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.27.2",
     "marked": "^17.0.1",
     "puppeteer": "^24.36.1",
     "tsx": "^4.21.0",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@multiformats/multiaddr": "12.5.1"
+    }
   }
 }

@@ -33,13 +33,13 @@
 body {
   background-color: var(--bg-surface);
   color: var(--text-primary);
-  font-family: 'Inter', ui-monospace, sans-serif;
+  font-family: var(--font-inter), 'Inter', system-ui, sans-serif;
   transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-x: hidden;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
 /* Glassmorphism */

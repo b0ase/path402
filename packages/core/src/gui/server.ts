@@ -6,7 +6,7 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, lstatSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Path402Agent } from '../client/agent.js';
@@ -18,16 +18,18 @@ import {
   getSpeculationOpportunities
 } from '../db/index.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const _dirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 export class GUIServer {
   private agent: Path402Agent;
   private port: number;
   private server: ReturnType<typeof createServer> | null = null;
+  private uiPath: string | null = null;
 
-  constructor(agent: Path402Agent, port = 4021) {
+  constructor(agent: Path402Agent, port = 4021, uiPath: string | null = null) {
     this.agent = agent;
     this.port = port;
+    this.uiPath = uiPath;
   }
 
   start(): void {
@@ -35,6 +37,9 @@ export class GUIServer {
 
     this.server.listen(this.port, () => {
       console.log(`[GUI] Dashboard available at \x1b[36mhttp://localhost:${this.port}\x1b[0m`);
+      if (this.uiPath) {
+        console.log(`[GUI] Serving static UI from: ${this.uiPath}`);
+      }
     });
   }
 
@@ -42,10 +47,26 @@ export class GUIServer {
     this.server?.close();
   }
 
+  private getMimeType(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    const mimes: Record<string, string> = {
+      'html': 'text/html',
+      'js': 'application/javascript',
+      'css': 'text/css',
+      'json': 'application/json',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'gif': 'image/gif',
+      'svg': 'image/svg+xml',
+      'ico': 'image/x-icon'
+    };
+    return mimes[ext || ''] || 'text/plain';
+  }
+
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = req.url || '/';
 
-    // CORS headers for local dev
+    // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -63,7 +84,39 @@ export class GUIServer {
         return;
       }
 
-      // Serve dashboard
+      // Serve static files if UI path is provided
+      if (this.uiPath) {
+        let filePath = join(this.uiPath, url === '/' ? 'index.html' : url);
+
+        // Next.js SPA Routing Support:
+        // 1. Check for exact file
+        // 2. Check for file + .html
+        // 3. Fallback to index.html for client-side routing
+
+        const tryPaths = [
+          filePath,
+          filePath + '.html',
+          join(this.uiPath, url, 'index.html'),
+          join(this.uiPath, 'index.html') // Final SPA fallback
+        ];
+
+        let found = false;
+        for (const p of tryPaths) {
+          if (existsSync(p)) {
+            const stats = lstatSync(p);
+            if (stats.isFile() && !p.includes('..')) {
+              const content = readFileSync(p);
+              res.writeHead(200, { 'Content-Type': this.getMimeType(p) });
+              res.end(content);
+              found = true;
+              break;
+            }
+          }
+        }
+        if (found) return;
+      }
+
+      // Fallback to embedded dashboard for index
       if (url === '/' || url === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(this.getDashboardHTML());
@@ -74,6 +127,7 @@ export class GUIServer {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (error) {
+      console.error('[GUI] Request error:', error);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: (error as Error).message }));
     }
@@ -158,18 +212,24 @@ export class GUIServer {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>$402 Client Dashboard</title>
+  <title>$402_AGENT // 4021</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
+    /* INDUSTRIAL THEME (Core Agent) - MATCHING CLIENT AESTHETIC */
     :root {
-      --bg-dark: #0a0e14;
-      --bg-card: #111820;
-      --border: #1e2a38;
-      --cyan: #00d4ff;
-      --green: #00ff88;
-      --yellow: #ffcc00;
-      --red: #ff4444;
-      --text: #e0e0e0;
-      --text-dim: #6b7280;
+      --bg: #000000;
+      --bg-panel: #09090b;     /* zinc-950 */
+      --border: #27272a;       /* zinc-800 */
+      --border-light: #3f3f46; /* zinc-700 */
+      --text: #ffffff;
+      --text-dim: #71717a;     /* zinc-500 */
+      --green: #22c55e;
+      --red: #ef4444;
+      --white: #ffffff;
+      --zinc-100: #f4f4f5;
+      --zinc-900: #18181b;
     }
 
     * {
@@ -179,376 +239,322 @@ export class GUIServer {
     }
 
     body {
-      font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-      background: var(--bg-dark);
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding: 20px;
+      padding: 40px;
+      line-height: 1.4;
+      font-size: 13px;
     }
 
+    /* TYPOGRAPHY */
+    h1, h2, h3 {
+      text-transform: uppercase;
+      letter-spacing: -0.05em;
+      font-weight: 900;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--text-dim);
+      font-weight: bold;
+      margin-bottom: 6px;
+      display: block;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* LAYOUT */
     .header {
-      text-align: center;
-      margin-bottom: 30px;
-      padding: 20px;
-      border: 1px solid var(--cyan);
-      border-radius: 8px;
-      background: linear-gradient(180deg, rgba(0,212,255,0.1) 0%, transparent 100%);
+      margin-bottom: 60px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
     }
 
     .logo {
-      font-size: 48px;
-      font-weight: bold;
-      background: linear-gradient(90deg, var(--green), var(--cyan));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      font-size: 64px;
+      line-height: 0.9;
+      font-weight: 900;
+      letter-spacing: -0.06em;
+      margin-bottom: 15px;
+      color: var(--white);
+    }
+    
+    .logo span {
+        color: var(--border-light);
     }
 
     .subtitle {
       color: var(--text-dim);
-      margin-top: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: bold;
+    }
+
+    .warning-banner {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 12px 20px;
+      margin-bottom: 40px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .warning-banner a {
+      color: var(--white);
+      text-decoration: none;
+      font-weight: bold;
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .warning-banner a:hover {
+        border-bottom-color: var(--white);
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-      gap: 20px;
-      max-width: 1400px;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      gap: 32px;
+      max-width: 1800px;
       margin: 0 auto;
     }
 
+    /* CARDS */
     .card {
-      background: var(--bg-card);
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
+      padding: 32px;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover {
+      border-color: var(--text-dim);
     }
 
     .card-title {
-      color: var(--cyan);
-      font-size: 14px;
+      font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 15px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      letter-spacing: 0.2em;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      font-weight: bold;
+      font-family: 'Inter', sans-serif;
     }
 
-    .card-title::before {
-      content: '▸';
-      color: var(--green);
-    }
-
+    /* STATS */
     .stat {
       display: flex;
       justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
+      align-items: baseline;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--zinc-900);
     }
 
     .stat:last-child {
       border-bottom: none;
     }
 
-    .stat-label {
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: bold;
+      font-size: 16px;
       color: var(--text-dim);
     }
 
-    .stat-value {
-      font-weight: bold;
-    }
-
+    .stat-value.highlight { color: var(--white); }
     .stat-value.positive { color: var(--green); }
     .stat-value.negative { color: var(--red); }
-    .stat-value.highlight { color: var(--cyan); }
 
+    /* CONTROLS */
     .toggle-group {
       display: flex;
-      gap: 10px;
-      margin-top: 15px;
+      gap: 1px;
+      background: var(--border);
+      margin-top: 24px;
+      border: 1px solid var(--border);
     }
 
     .toggle-btn {
       flex: 1;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: transparent;
-      color: var(--text);
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text-dim);
+      border: none;
       cursor: pointer;
-      font-family: inherit;
-      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
       transition: all 0.2s;
+      font-weight: bold;
     }
 
     .toggle-btn:hover {
-      border-color: var(--cyan);
+      background: var(--bg-panel);
+      color: var(--white);
     }
 
     .toggle-btn.active {
-      background: var(--cyan);
-      color: var(--bg-dark);
-      border-color: var(--cyan);
+      background: var(--white);
+      color: var(--bg);
     }
 
-    .toggle-btn.danger.active {
+    .toggle-btn.active.danger {
       background: var(--red);
-      border-color: var(--red);
+      color: var(--white);
     }
 
-    .peer-list, .token-list {
-      max-height: 200px;
+    /* LISTS */
+    .list-container {
+      max-height: 240px;
       overflow-y: auto;
+      margin-top: -10px;
     }
 
-    .peer-item, .token-item {
-      padding: 8px;
+    .list-item {
+      padding: 12px 0;
       border-bottom: 1px solid var(--border);
-      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
     }
 
-    .peer-item:last-child, .token-item:last-child {
-      border-bottom: none;
-    }
-
+    .list-item:last-child { border-bottom: none; }
+    
     .status-dot {
       display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
+      width: 6px;
+      height: 6px;
+      background: var(--text-dim);
       margin-right: 8px;
     }
-
-    .status-dot.online { background: var(--green); }
-    .status-dot.offline { background: var(--red); }
-    .status-dot.pending { background: var(--yellow); }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 8px rgba(34, 197, 94, 0.4); }
 
     .empty {
-      color: var(--text-dim);
-      font-style: italic;
+      padding: 24px;
       text-align: center;
-      padding: 20px;
+      color: var(--text-dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border: 1px dashed var(--border);
+      margin-top: 16px;
+      font-family: 'JetBrains Mono', monospace;
     }
 
-    .refresh-btn {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      border: 2px solid var(--cyan);
-      background: var(--bg-card);
-      color: var(--cyan);
-      cursor: pointer;
-      font-size: 20px;
-      transition: all 0.2s;
-    }
-
-    .refresh-btn:hover {
-      background: var(--cyan);
-      color: var(--bg-dark);
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .loading {
-      animation: pulse 1s infinite;
-    }
-
-    /* Tabs */
+    /* TABS */
     .tabs {
       display: flex;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
+      gap: 32px;
+      margin-bottom: 48px;
+      border-bottom: 1px solid var(--border);
     }
 
     .tab {
-      padding: 10px 20px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--bg-card);
-      color: var(--text-dim);
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-
-    .tab:hover {
-      border-color: var(--cyan);
-      color: var(--text);
-    }
-
-    .tab.active {
-      border-color: var(--cyan);
-      background: rgba(0, 212, 255, 0.1);
-      color: var(--cyan);
-    }
-
-    .tab-content {
-      display: none;
-    }
-
-    .tab-content.active {
-      display: block;
-    }
-
-    /* Call Panel */
-    .video-placeholder {
-      background: var(--bg-dark);
-      border: 2px dashed var(--border);
-      border-radius: 8px;
-      height: 300px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-dim);
-      margin-bottom: 20px;
-    }
-
-    .video-icon {
-      font-size: 48px;
-      margin-bottom: 10px;
-    }
-
-    .call-controls {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-
-    .call-input {
-      flex: 1;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--bg-dark);
-      color: var(--text);
-      font-family: inherit;
-    }
-
-    .call-btn {
-      padding: 12px 24px;
+      background: none;
       border: none;
-      border-radius: 4px;
-      background: var(--cyan);
-      color: var(--bg-dark);
-      font-family: inherit;
-      font-weight: bold;
+      color: var(--text-dim);
+      padding: 0 0 16px 0;
       cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      border-bottom: 2px solid transparent;
       transition: all 0.2s;
+      font-weight: bold;
     }
 
-    .call-btn:hover {
-      background: var(--green);
+    .tab:hover { color: var(--white); }
+    .tab.active { 
+      color: var(--white); 
+      border-bottom-color: var(--white); 
     }
 
-    .call-info {
-      color: var(--text-dim);
-      font-size: 12px;
-      text-align: center;
-    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-    /* Search */
-    .search-input {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--bg-dark);
-      color: var(--text);
-      font-family: inherit;
-      margin-bottom: 20px;
+    /* UTILS */
+    .refresh-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 48px;
+        height: 48px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--white);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 20px;
     }
+    .refresh-btn:hover { background: var(--white); color: var(--bg); }
+    .refresh-btn.loading { animation: spin 1s linear infinite; }
 
-    /* Discover Grid */
-    .discover-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
 
-    .discover-section h3 {
-      color: var(--cyan);
-      font-size: 12px;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-    /* Coming Soon */
-    .coming-soon {
-      margin-top: 20px;
-      padding: 20px;
-      border: 1px dashed var(--border);
-      border-radius: 8px;
-      text-align: center;
-      color: var(--text-dim);
-    }
-
-    .coming-soon p {
-      margin: 5px 0;
-    }
-
-    /* KYC Info */
-    .kyc-info {
-      margin-top: 20px;
-    }
-
-    .kyc-info h3 {
-      color: var(--cyan);
-      font-size: 14px;
-      margin-bottom: 10px;
-    }
-
-    .kyc-info ul {
-      list-style: none;
-      color: var(--text-dim);
-    }
-
-    .kyc-info li {
-      padding: 5px 0;
-    }
-
-    .kyc-info li::before {
-      content: '✓ ';
-      color: var(--green);
-    }
-
-    /* Staking */
-    .staking-summary {
-      margin-bottom: 20px;
-    }
-
-    .staking-list h3 {
-      color: var(--cyan);
-      font-size: 12px;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
   </style>
 </head>
 <body>
+  <div class="warning-banner">
+    <div>
+    <span style="color: var(--green)">●</span>&nbsp;
+    LIGHTWEIGHT AGENT INTERFACE (CORE)
+    </div>
+    <div>
+      FOR FULL EXPERIENCE USE <a href="http://localhost:4023">DESKTOP CLIENT (:4023)</a>
+    </div>
+  </div>
+
   <div class="header">
-    <div class="logo">$402</div>
-    <div class="subtitle">Tokenized Attention Economy · Social Scaling</div>
+    <div>
+      <div class="logo">$402_AGENT</div>
+      <div class="subtitle">AUTONOMOUS NODE OPERATOR · PORT 4021</div>
+    </div>
+    <div style="text-align: right">
+        <div class="label">SYSTEM STATUS</div>
+        <div id="status-display" style="color: var(--green)">ONLINE</div>
+    </div>
   </div>
 
   <!-- Navigation Tabs -->
   <div class="tabs">
-    <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
-    <button class="tab" onclick="showTab('calls')">Calls</button>
-    <button class="tab" onclick="showTab('mytoken')">My Token</button>
-    <button class="tab" onclick="showTab('discover')">Discover</button>
-    <button class="tab" onclick="showTab('staking')">Staking</button>
-    <button class="tab" onclick="showTab('kyc')">KYC</button>
+    <button class="tab active" onclick="showTab('dashboard')">DATA_STREAM</button>
+    <button class="tab" onclick="showTab('calls')">COMMS.LINK</button>
+    <button class="tab" onclick="showTab('mytoken')">TOKEN.MINT</button>
+    <button class="tab" onclick="showTab('staking')">STAKING.POOL</button>
   </div>
 
   <!-- Dashboard Tab -->
@@ -556,267 +562,124 @@ export class GUIServer {
   <div class="grid">
     <!-- Node Status -->
     <div class="card">
-      <div class="card-title">Node Status</div>
+      <div class="card-title">SYSTEM_METRICS</div>
       <div class="stat">
-        <span class="stat-label">Node ID</span>
-        <span class="stat-value highlight" id="node-id">Loading...</span>
+        <span class="label">NODE ID</span>
+        <span class="stat-value highlight" id="node-id">Initializing...</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Uptime</span>
+        <span class="label">UPTIME</span>
         <span class="stat-value" id="uptime">-</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Gossip Port</span>
+        <span class="label">GOSSIP PORT</span>
         <span class="stat-value">4020</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Status</span>
-        <span class="stat-value positive" id="status">●  Online</span>
       </div>
     </div>
 
     <!-- Network -->
     <div class="card">
-      <div class="card-title">Network</div>
+      <div class="card-title">NETWORK_TOPOLOGY</div>
       <div class="stat">
-        <span class="stat-label">Connected Peers</span>
+        <span class="label">PEERS CONNECTED</span>
         <span class="stat-value highlight" id="peers-connected">0</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Known Peers</span>
+        <span class="label">KNOWN PEERS</span>
         <span class="stat-value" id="peers-known">0</span>
       </div>
-      <div class="stat">
-        <span class="stat-label">Known Tokens</span>
-        <span class="stat-value" id="tokens-known">0</span>
-      </div>
-      <div class="peer-list" id="peer-list">
-        <div class="empty">No peers connected</div>
+      <div class="list-container" id="peer-list" style="margin-top: 15px">
+        <div class="empty">Scanning for peers...</div>
       </div>
     </div>
 
     <!-- Portfolio -->
     <div class="card">
-      <div class="card-title">Portfolio</div>
+      <div class="card-title">ASSET_ALLOCATION</div>
       <div class="stat">
-        <span class="stat-label">Tokens Held</span>
-        <span class="stat-value highlight" id="tokens-held">0</span>
+        <span class="label">NET LIQUIDITY</span>
+        <span class="stat-value highlight" id="total-value">0 SAT</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Total Value</span>
-        <span class="stat-value" id="total-value">0 SAT</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Total Spent</span>
-        <span class="stat-value" id="total-spent">0 SAT</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Total Revenue</span>
-        <span class="stat-value positive" id="total-revenue">0 SAT</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">P&L</span>
+        <span class="label">TOTAL ALPHA (P&L)</span>
         <span class="stat-value" id="pnl">0 SAT</span>
+      </div>
+      <div class="list-container" id="holdings" style="margin-top: 15px">
+        <div class="empty">Wallet Empty</div>
       </div>
     </div>
 
     <!-- Speculation -->
     <div class="card">
-      <div class="card-title">Speculation Engine</div>
+      <div class="card-title">AGENT_CONTROL</div>
       <div class="stat">
-        <span class="stat-label">Strategy</span>
+        <span class="label">STRATEGY</span>
         <span class="stat-value highlight" id="strategy">early_adopter</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Budget</span>
-        <span class="stat-value" id="budget">100,000 SAT</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Exposure</span>
-        <span class="stat-value" id="exposure">0%</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Positions</span>
-        <span class="stat-value" id="positions">0</span>
+        <span class="label">BUDGET AVAIL</span>
+        <span class="stat-value" id="budget">0 SAT</span>
       </div>
       <div class="toggle-group">
         <button class="toggle-btn" id="speculation-btn" onclick="toggleSpeculation()">
-          Speculation: OFF
+          SPECULATION: OFF
         </button>
         <button class="toggle-btn" id="auto-btn" onclick="toggleAuto()">
-          Auto-Acquire: OFF
+          AUTO-ACQUIRE: OFF
         </button>
       </div>
-    </div>
-
-    <!-- Opportunities -->
-    <div class="card">
-      <div class="card-title">Opportunities</div>
-      <div class="token-list" id="opportunities">
-        <div class="empty">No opportunities found</div>
-      </div>
-    </div>
-
-    <!-- Holdings -->
-    <div class="card">
-      <div class="card-title">Holdings</div>
-      <div class="token-list" id="holdings">
-        <div class="empty">No tokens held</div>
+      <div class="label" style="margin-top: 15px">OPPORTUNITIES DETECTED</div>
+      <div class="list-container" id="opportunities">
+        <div class="empty">No signals</div>
       </div>
     </div>
   </div>
-
   </div>
-  </div><!-- End Dashboard Tab -->
 
-  <!-- Calls Tab -->
+  <!-- Calls Tab (Placeholder) -->
   <div id="tab-calls" class="tab-content">
-    <div class="card" style="max-width: 800px; margin: 0 auto;">
-      <div class="card-title">Video Calls</div>
-      <div class="call-panel">
-        <div class="video-placeholder">
-          <div class="video-icon">📹</div>
-          <div>No active call</div>
+    <div class="grid" style="place-items: center; height: 400px;">
+        <div class="empty" style="border: 1px solid var(--border); padding: 40px;">
+            <h3>COMMS MODULE OFFLINE</h3>
+            <p style="margin-top: 10px; color: var(--text-dim)">Video uplink requires standard client connection (port 4022).</p>
         </div>
-        <div class="call-controls">
-          <input type="text" id="call-token" placeholder="Enter $TOKEN to call..." class="call-input">
-          <button class="call-btn" onclick="startCall()">Start Call</button>
-        </div>
-        <div class="call-info">
-          <p>To call someone, you need their tokens.</p>
-          <p>1 token = 1 second of connection time.</p>
-        </div>
-      </div>
     </div>
   </div>
 
-  <!-- My Token Tab -->
+  <!-- Mint Tab (Placeholder) -->
   <div id="tab-mytoken" class="tab-content">
-    <div class="card" style="max-width: 600px; margin: 0 auto;">
-      <div class="card-title">Your Token</div>
-      <div class="token-config">
-        <div class="stat">
-          <span class="stat-label">Token Name</span>
-          <span class="stat-value highlight">$YOUR_NAME</span>
+    <div class="grid" style="place-items: center; height: 400px;">
+        <div class="empty" style="border: 1px solid var(--border); padding: 40px;">
+            <h3>MINTING FACILITY LOCKED</h3>
+            <p style="margin-top: 10px; color: var(--text-dim)">Token generation requires identity verification in main client.</p>
         </div>
-        <div class="stat">
-          <span class="stat-label">Total Supply</span>
-          <span class="stat-value">1,000,000,000</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Float (for sale)</span>
-          <span class="stat-value">100,000,000 (10%)</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Floor Price</span>
-          <span class="stat-value">500 SAT</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Access Rate</span>
-          <span class="stat-value">1 token/second</span>
-        </div>
-        <div class="coming-soon">
-          <p>Token minting coming soon...</p>
-          <p>You'll be able to create your $TOKEN and control access to your time.</p>
-        </div>
-      </div>
     </div>
   </div>
 
-  <!-- Discover Tab -->
-  <div id="tab-discover" class="tab-content">
-    <div class="card" style="max-width: 800px; margin: 0 auto;">
-      <div class="card-title">Discover Tokens</div>
-      <input type="text" placeholder="Search $TOKEN..." class="search-input">
-      <div class="discover-grid">
-        <div class="discover-section">
-          <h3>Trending</h3>
-          <div class="token-list" id="trending-tokens">
-            <div class="empty">Loading...</div>
-          </div>
-        </div>
-        <div class="discover-section">
-          <h3>Friends</h3>
-          <div class="token-list" id="friend-tokens">
-            <div class="empty">No friends added</div>
-          </div>
-        </div>
-        <div class="discover-section">
-          <h3>New</h3>
-          <div class="token-list" id="new-tokens">
-            <div class="empty">Loading...</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Staking Tab -->
+   <!-- Staking Tab (Placeholder) -->
   <div id="tab-staking" class="tab-content">
-    <div class="card" style="max-width: 800px; margin: 0 auto;">
-      <div class="card-title">Staking & Dividends</div>
-      <div class="staking-summary">
-        <div class="stat">
-          <span class="stat-label">Total Staked Value</span>
-          <span class="stat-value highlight">0 SAT</span>
+    <div class="grid" style="place-items: center; height: 400px;">
+        <div class="empty" style="border: 1px solid var(--border); padding: 40px;">
+            <h3>STAKING POOL EMPTY</h3>
+            <p style="margin-top: 10px; color: var(--text-dim)">No active yield farms detected.</p>
         </div>
-        <div class="stat">
-          <span class="stat-label">Pending Dividends</span>
-          <span class="stat-value positive">0 SAT</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Total Earned (All Time)</span>
-          <span class="stat-value">0 SAT</span>
-        </div>
-      </div>
-      <div class="staking-list">
-        <h3>Your Staked Positions</h3>
-        <div class="token-list" id="staked-tokens">
-          <div class="empty">No staked positions</div>
-        </div>
-      </div>
-      <div class="coming-soon">
-        <p>Stake tokens in creators you believe in.</p>
-        <p>Earn dividends from their success.</p>
-      </div>
     </div>
   </div>
 
-  <!-- KYC Tab -->
-  <div id="tab-kyc" class="tab-content">
-    <div class="card" style="max-width: 600px; margin: 0 auto;">
-      <div class="card-title">Identity Verification</div>
-      <div class="kyc-status">
-        <div class="stat">
-          <span class="stat-label">Status</span>
-          <span class="stat-value" style="color: var(--yellow);">Not Verified</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Linked Tokens</span>
-          <span class="stat-value">0</span>
-        </div>
-      </div>
-      <div class="kyc-info">
-        <h3>Why KYC?</h3>
-        <ul>
-          <li>Basic access requires NO verification</li>
-          <li>To claim dividends, KYC is required</li>
-          <li>Your identity links to tokens you trust</li>
-          <li>Privacy preserved - only share where needed</li>
-        </ul>
-      </div>
-      <div class="coming-soon">
-        <p>Identity verification coming soon...</p>
-        <p>Link your phone contract or government ID to claim dividends.</p>
-      </div>
-    </div>
-  </div>
-
-  <button class="refresh-btn" onclick="refresh()" title="Refresh">↻</button>
+  <button class="refresh-btn" onclick="refresh()" title="SYNC">↻</button>
 
   <script>
     let speculationEnabled = false;
     let autoAcquireEnabled = false;
+
+    // Formatting Helpers
+    const formatSats = (s) => parseInt(s).toLocaleString() + ' SAT';
+    const formatUptime = (ms) => {
+        const s = Math.floor(ms/1000);
+        const m = Math.floor(s/60);
+        const h = Math.floor(m/60);
+        return \`\${h}h \${m%60}m\`;
+    };
 
     async function fetchData() {
       try {
@@ -825,99 +688,93 @@ export class GUIServer {
         const peers = await fetch('/api/peers').then(r => r.json());
         const opportunities = await fetch('/api/opportunities').then(r => r.json());
 
-        // Update status
-        document.getElementById('node-id').textContent = status.nodeId.slice(0, 16) + '...';
+        // Update Headers
+        document.getElementById('node-id').textContent = status.nodeId.slice(0, 12) + '...';
         document.getElementById('uptime').textContent = formatUptime(status.uptime);
         document.getElementById('peers-connected').textContent = status.peers.connected;
         document.getElementById('peers-known').textContent = status.peers.known;
-        document.getElementById('tokens-known').textContent = status.tokens.known;
-        document.getElementById('tokens-held').textContent = status.tokens.held;
 
         // Portfolio
         document.getElementById('total-value').textContent = formatSats(status.portfolio.totalValue);
-        document.getElementById('total-spent').textContent = formatSats(status.portfolio.totalSpent);
-        document.getElementById('total-revenue').textContent = formatSats(status.portfolio.totalRevenue);
+        document.getElementById('pnl').textContent = formatSats(status.portfolio.pnl);
+        document.getElementById('pnl').className = 'stat-value ' + (status.portfolio.pnl >= 0 ? 'positive' : 'negative');
 
-        const pnlEl = document.getElementById('pnl');
-        pnlEl.textContent = formatSats(status.portfolio.pnl);
-        pnlEl.className = 'stat-value ' + (status.portfolio.pnl >= 0 ? 'positive' : 'negative');
-
-        // Speculation
+        // Speculation Status
         document.getElementById('strategy').textContent = status.speculation.strategy;
         document.getElementById('budget').textContent = formatSats(status.speculation.budget);
-        document.getElementById('exposure').textContent = status.speculation.exposure + '%';
-        document.getElementById('positions').textContent = status.speculation.positions;
-
+        
         speculationEnabled = status.speculation.enabled;
         autoAcquireEnabled = status.speculation.autoAcquire;
         updateButtons();
 
-        // Peers list
-        const peerList = document.getElementById('peer-list');
-        if (peers.active.length > 0) {
-          peerList.innerHTML = peers.active.map(p =>
-            '<div class="peer-item"><span class="status-dot online"></span>' +
-            p.peer_id.slice(0, 12) + '... (' + p.host + ':' + p.port + ')</div>'
-          ).join('');
-        } else {
-          peerList.innerHTML = '<div class="empty">No peers connected</div>';
-        }
-
-        // Opportunities
-        const oppList = document.getElementById('opportunities');
-        if (opportunities.length > 0) {
-          oppList.innerHTML = opportunities.slice(0, 5).map(o =>
-            '<div class="token-item">' +
-            '<strong>' + o.token_id + '</strong><br>' +
-            '<span style="color: var(--text-dim)">Supply: ' + o.current_supply +
-            ' · Price: ' + o.current_price_sats + ' SAT' +
-            (o.ai_score ? ' · Score: ' + o.ai_score : '') + '</span></div>'
-          ).join('');
-        } else {
-          oppList.innerHTML = '<div class="empty">No opportunities found</div>';
-        }
-
-        // Holdings
-        const holdList = document.getElementById('holdings');
-        if (portfolio.length > 0) {
-          holdList.innerHTML = portfolio.map(h =>
-            '<div class="token-item">' +
-            '<strong>' + h.token_id + '</strong><br>' +
-            '<span style="color: var(--text-dim)">Balance: ' + h.balance +
-            ' · P&L: <span style="color: ' + (h.pnl_sats >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
-            formatSats(h.pnl_sats) + '</span></span></div>'
-          ).join('');
-        } else {
-          holdList.innerHTML = '<div class="empty">No tokens held</div>';
-        }
+        // Lists
+        renderPeers(peers.active);
+        renderHoldings(portfolio);
+        renderOpportunities(opportunities);
 
       } catch (error) {
-        console.error('Failed to fetch data:', error);
+        console.error('Sync failed', error);
       }
     }
 
-    function formatSats(sats) {
-      return sats.toLocaleString() + ' SAT';
+    function renderPeers(peers) {
+        const container = document.getElementById('peer-list');
+        if (!peers.length) {
+            container.innerHTML = '<div class="empty">Scanning...</div>';
+            return;
+        }
+        container.innerHTML = peers.map(p => \`
+            <div class="list-item">
+                <span style="font-size: 11px"><span class="status-dot online"></span>NODE_\${p.peer_id.slice(0,6)}</span>
+                <span style="color: var(--text-dim); font-size: 10px">\${p.host}:\${p.port}</span>
+            </div>
+        \`).join('');
     }
 
-    function formatUptime(ms) {
-      const seconds = Math.floor(ms / 1000);
-      const minutes = Math.floor(seconds / 60);
-      const hours = Math.floor(minutes / 60);
+    function renderHoldings(holdings) {
+        const container = document.getElementById('holdings');
+        if (!holdings.length) {
+            container.innerHTML = '<div class="empty">Wallet Empty</div>';
+            return;
+        }
+        container.innerHTML = holdings.map(h => \`
+            <div class="list-item">
+                <div style="display:flex; flex-direction:column">
+                    <span style="font-weight:bold">\${h.token_id}</span>
+                    <span style="color: var(--text-dim); font-size: 10px">\${h.balance.toLocaleString()} SHARES</span>
+                </div>
+                <div style="text-align:right">
+                    <div class="\${h.pnl_sats >= 0 ? 'positive' : 'negative'}">\${formatSats(h.pnl_sats)}</div>
+                </div>
+            </div>
+        \`).join('');
+    }
 
-      if (hours > 0) return hours + 'h ' + (minutes % 60) + 'm';
-      if (minutes > 0) return minutes + 'm ' + (seconds % 60) + 's';
-      return seconds + 's';
+    function renderOpportunities(opps) {
+        const container = document.getElementById('opportunities');
+        if (!opps.length) {
+            container.innerHTML = '<div class="empty">No Signals</div>';
+            return;
+        }
+        container.innerHTML = opps.slice(0,3).map(o => \`
+            <div class="list-item">
+                <div style="display:flex; flex-direction:column">
+                    <span style="font-weight:bold">\${o.token_id}</span>
+                    <span style="color: var(--text-dim); font-size: 10px">SCORE: \${o.ai_score || '-'}</span>
+                </div>
+                <div>\${formatSats(o.current_price_sats)}</div>
+            </div>
+        \`).join('');
     }
 
     function updateButtons() {
       const specBtn = document.getElementById('speculation-btn');
       const autoBtn = document.getElementById('auto-btn');
 
-      specBtn.textContent = 'Speculation: ' + (speculationEnabled ? 'ON' : 'OFF');
+      specBtn.textContent = 'SPECULATION: ' + (speculationEnabled ? 'ON' : 'OFF');
       specBtn.className = 'toggle-btn' + (speculationEnabled ? ' active' : '');
 
-      autoBtn.textContent = 'Auto-Acquire: ' + (autoAcquireEnabled ? 'ON' : 'OFF');
+      autoBtn.textContent = 'AUTO-ACQUIRE: ' + (autoAcquireEnabled ? 'ON' : 'OFF');
       autoBtn.className = 'toggle-btn' + (autoAcquireEnabled ? ' active danger' : '');
     }
 
@@ -942,33 +799,15 @@ export class GUIServer {
       });
     }
 
-    // Tab switching
     function showTab(tabId) {
-      // Hide all tabs
-      document.querySelectorAll('.tab-content').forEach(el => {
-        el.classList.remove('active');
-      });
-      document.querySelectorAll('.tab').forEach(el => {
-        el.classList.remove('active');
-      });
-
-      // Show selected tab
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
       document.getElementById('tab-' + tabId).classList.add('active');
       event.target.classList.add('active');
     }
 
-    // Start call (placeholder)
-    function startCall() {
-      const token = document.getElementById('call-token').value;
-      if (token) {
-        alert('Calling ' + token + '...\\nVideo calls coming soon!');
-      }
-    }
-
-    // Initial load
+    // Init
     fetchData();
-
-    // Auto-refresh every 5 seconds
     setInterval(fetchData, 5000);
   </script>
 </body>

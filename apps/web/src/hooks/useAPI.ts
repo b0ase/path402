@@ -2,10 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-// API base URL - uses Electron IPC if available, otherwise HTTP
-const API_BASE = typeof window !== 'undefined' && (window as any).path402
-  ? null // Use IPC
-  : 'http://localhost:4021';
+// API base URL
+const API_BASE = 'http://localhost:4021';
 
 // Type definitions
 export interface AgentStatus {
@@ -57,11 +55,13 @@ export interface ChatMessage {
 
 // Fetch helper
 async function fetchAPI<T>(endpoint: string): Promise<T> {
-  // Try Electron IPC first
-  if (typeof window !== 'undefined' && (window as any).path402) {
-    const ipc = (window as any).path402;
-    if (endpoint === '/api/status') {
-      return ipc.getStatus();
+  // Try Electron IPC first if available and if it's the status endpoint
+  if (typeof window !== 'undefined' && (window as any).path402 && endpoint === '/api/status' && (window as any).path402.getStatus) {
+    try {
+      const ipcStatus = await (window as any).path402.getStatus();
+      if (ipcStatus) return mapStatus(ipcStatus) as unknown as T;
+    } catch (e) {
+      console.warn('[API] IPC status failed, falling back to HTTP', e);
     }
   }
 
@@ -70,14 +70,42 @@ async function fetchAPI<T>(endpoint: string): Promise<T> {
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+
+  // If this is the status endpoint, map the nested v3.0.0 response to our flat interface
+  if (endpoint === '/api/status' && data.nodeId) {
+    return mapStatus(data) as unknown as T;
+  }
+
+  return data;
+}
+
+/**
+ * Maps nested v3.0.0 AgentStatus to flat UI AgentStatus
+ */
+function mapStatus(data: any): AgentStatus {
+  // If already flat (legacy support), return as is
+  if (data.peersConnected !== undefined) return data;
+
+  return {
+    nodeId: data.nodeId,
+    uptime: data.uptime,
+    peersConnected: data.peers?.connected || 0,
+    peersKnown: data.peers?.known || 0,
+    tokensKnown: data.tokens?.known || 0,
+    portfolioValue: data.portfolio?.totalValue || 0,
+    totalPnL: data.portfolio?.pnl || 0,
+    speculationEnabled: data.speculation?.enabled || false,
+    autoAcquireEnabled: data.speculation?.autoAcquire || false
+  };
 }
 
 // Hooks
 export function useStatus() {
   return useQuery({
     queryKey: ['status'],
-    queryFn: () => fetchAPI<AgentStatus>('/api/status')
+    queryFn: () => fetchAPI<AgentStatus>('/api/status'),
+    refetchInterval: 5000 // Poll every 5s
   });
 }
 

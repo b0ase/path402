@@ -245,3 +245,110 @@ export async function getHolderPurchases(holderId: string): Promise<Purchase[]> 
 
   return data || [];
 }
+
+// ── Divvy Integration ───────────────────────────────────────────
+
+/**
+ * Record an incoming payment for dividend distribution
+ * Called when a payment is received for any tokenized asset
+ */
+export async function recordDivvyPayment(
+  assetIdentifier: string,
+  txId: string,
+  amountSats: number,
+  payerInfo?: { handle?: string; address?: string }
+): Promise<boolean> {
+  const db = getDatabase();
+
+  try {
+    // First, get the asset ID from divvy_assets
+    const { data: asset, error: assetError } = await db
+      .from('divvy_assets')
+      .select('id')
+      .eq('identifier', assetIdentifier)
+      .single();
+
+    if (assetError || !asset) {
+      console.warn(`[Divvy] Asset not found for identifier: ${assetIdentifier}`);
+      return false;
+    }
+
+    // Insert payment record
+    const { error: insertError } = await db
+      .from('divvy_payments')
+      .insert({
+        asset_id: asset.id,
+        tx_id: txId,
+        amount_sats: amountSats,
+        payer_handle: payerInfo?.handle,
+        payer_address: payerInfo?.address,
+        status: 'pending',
+        payment_type: 'revenue',
+        received_at: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      console.error('[Divvy] Failed to record payment:', insertError.message);
+      return false;
+    }
+
+    console.log(`[Divvy] Recorded payment: ${amountSats} sats for ${assetIdentifier}`);
+    return true;
+  } catch (e) {
+    console.error('[Divvy] Error recording payment:', e);
+    return false;
+  }
+}
+
+/**
+ * Get or create a divvy asset from a domain/path
+ * Ensures the asset exists in divvy_assets for dividend distribution
+ */
+export async function ensureDivvyAsset(
+  identifier: string,
+  assetType: 'domain' | 'path' | 'handle',
+  ownerAddress?: string
+): Promise<string | null> {
+  const db = getDatabase();
+
+  try {
+    // Check if already exists
+    const { data: existing } = await db
+      .from('divvy_assets')
+      .select('id')
+      .eq('identifier', identifier)
+      .single();
+
+    if (existing) {
+      return existing.id;
+    }
+
+    // Create new asset
+    const symbol = identifier.startsWith('$') ? identifier : `$${identifier}`;
+    const { data: newAsset, error } = await db
+      .from('divvy_assets')
+      .insert({
+        asset_type: assetType,
+        identifier,
+        symbol,
+        issuer_address: ownerAddress,
+        receive_address: ownerAddress,
+        verification_status: 'pending',
+        verification_method: assetType === 'domain' ? 'dns' : assetType === 'path' ? 'path402' : 'handcash',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Divvy] Failed to create asset:', error.message);
+      return null;
+    }
+
+    console.log(`[Divvy] Created asset: ${identifier} (${assetType})`);
+    return newAsset.id;
+  } catch (e) {
+    console.error('[Divvy] Error ensuring asset:', e);
+    return null;
+  }
+}
+

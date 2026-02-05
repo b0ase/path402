@@ -116,7 +116,7 @@ export type { AgentConfig, AgentStatus } from "./client/agent.js";
 
 // ── Server Init ─────────────────────────────────────────────────
 
-const server = new McpServer({
+export const server = new McpServer({
   name: "path402",
   version: "1.3.0"
 });
@@ -1228,44 +1228,4 @@ Returns:
   }
 );
 
-// ── Transport Setup ─────────────────────────────────────────────
-
-async function runStdio(): Promise<void> {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("$402 MCP server running on stdio");
-}
-
-async function runHTTP(): Promise<void> {
-  const app = express();
-  app.use(express.json());
-
-  app.post("/mcp", async (req, res) => {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true
-    });
-    res.on("close", () => transport.close());
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  });
-
-  const port = parseInt(process.env.PORT || "3402");
-  app.listen(port, () => {
-    console.error(`$402 MCP server running on http://localhost:${port}/mcp`);
-  });
-}
-
-// Choose transport
-const transport = process.env.TRANSPORT || "stdio";
-if (transport === "http") {
-  runHTTP().catch(error => {
-    console.error("Server error:", error);
-    process.exit(1);
-  });
-} else {
-  runStdio().catch(error => {
-    console.error("Server error:", error);
-    process.exit(1);
-  });
-}
+// Side-effects removed. Use runServer() from mcp.ts to start.
