@@ -1,158 +1,167 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --primary: #111;
-    --secondary: #555;
-    --accent: #222;
-    --code-bg: #f5f5f5;
-    --border: #e0e0e0;
+    --text-primary: #18181b;
+    /* Zinc 900 */
+    --text-secondary: #71717a;
+    /* Zinc 500 */
+    --bg-secondary: #f4f4f5;
+    /* Zinc 100 */
+    --border-color: #e4e4e7;
+    /* Zinc 200 */
 }
 
 body {
     font-family: 'Inter', sans-serif;
-    font-size: 11pt;
+    font-size: 10pt;
     line-height: 1.6;
-    color: var(--primary);
+    color: var(--text-primary);
     margin: 0;
-    padding: 0;
 }
 
-/* Cover Page Logic would go here if we could target page 1 specifically easily, 
-   but for now we focus on clean layout */
-
-h1,
-h2,
-h3,
-h4 {
-    font-weight: 800;
-    margin-top: 2em;
-    margin-bottom: 0.8em;
-    color: #000;
-    line-height: 1.2;
-}
-
+/* Typography matching site */
 h1 {
-    font-size: 24pt;
-    border-bottom: 3px solid #000;
-    padding-bottom: 15px;
+    font-size: 28pt;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.05em;
     margin-top: 0;
-    letter-spacing: -0.02em;
+    margin-bottom: 0.2em;
+    border-bottom: 4px solid var(--text-primary);
+    padding-bottom: 0.2em;
 }
 
 h2 {
-    font-size: 18pt;
-    border-bottom: 1px solid #000;
-    padding-bottom: 8px;
-    letter-spacing: -0.01em;
+    font-size: 16pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin-top: 2.5em;
+    /* Breathing room */
+    margin-bottom: 1em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5em;
+    page-break-after: avoid;
 }
 
 h3 {
-    font-size: 14pt;
+    font-size: 11pt;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 1.5em;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin-top: 2em;
+    margin-bottom: 0.8em;
+    page-break-after: avoid;
 }
 
 h4 {
-    font-size: 12pt;
-    font-weight: 600;
+    font-size: 10pt;
+    font-weight: 700;
+    margin-top: 1.5em;
+    page-break-after: avoid;
 }
 
 p {
-    margin-bottom: 1em;
-    text-align: justify;
+    margin-bottom: 1.2em;
+    color: #27272a;
+    /* Zinc 800 */
 }
 
+/* Code Blocks & Tables - Essential for technical docs */
 code {
     font-family: 'JetBrains Mono', monospace;
-    background: var(--code-bg);
-    padding: 2px 5px;
-    border-radius: 3px;
     font-size: 0.9em;
+    background-color: var(--bg-secondary);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
 }
 
 pre {
-    background: var(--code-bg);
-    padding: 15px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
+    background-color: #09090b;
+    /* Zinc 950 - Dark mode code blocks */
+    color: #f4f4f5;
+    /* Zinc 100 */
+    padding: 1.5em;
+    border-radius: 6px;
     overflow-x: hidden;
+    /* Prevent horizontal scrollbars causing layout issues */
+    white-space: pre-wrap;
+    /* Wrap long lines */
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    /* Smaller font to fit ASCII art */
+    line-height: 1.4;
     margin: 1.5em 0;
     page-break-inside: avoid;
 }
 
 pre code {
-    background: none;
+    background-color: transparent;
     padding: 0;
-    border: none;
-    color: #222;
-    font-size: 0.85em;
-    line-height: 1.4;
+    color: inherit;
 }
 
 blockquote {
-    border-left: 4px solid #000;
+    border-left: 3px solid var(--text-primary);
     margin: 1.5em 0;
     padding-left: 1.5em;
     font-style: italic;
-    color: var(--secondary);
+    color: var(--text-secondary);
+    background-color: #fafafa;
+    padding: 1em;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     margin: 2em 0;
-    font-size: 0.95em;
+    font-size: 9pt;
     page-break-inside: avoid;
 }
 
-th,
-td {
-    border: 1px solid var(--border);
-    padding: 10px 12px;
-    text-align: left;
-}
-
 th {
-    background-color: #f9f9f9;
-    font-weight: 600;
+    text-align: left;
+    padding: 12px;
+    background-color: var(--bg-secondary);
+    font-weight: 700;
     text-transform: uppercase;
-    font-size: 0.85em;
     letter-spacing: 0.05em;
+    font-size: 8pt;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
 }
 
-tr:nth-child(even) {
-    background-color: #fafafa;
+td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
 }
 
+/* Lists */
 ul,
 ol {
-    margin-bottom: 1em;
-    padding-left: 2em;
+    padding-left: 1.5em;
+    margin-bottom: 1.5em;
 }
 
 li {
     margin-bottom: 0.5em;
+    padding-left: 0.5em;
 }
 
-hr {
-    border: 0;
-    border-top: 1px solid var(--border);
-    margin: 3em 0;
-}
-
-/* Page Breaks */
-h1,
-h2,
-h3 {
-    page-break-after: avoid;
-}
-
-img {
-    max-width: 100%;
-}
-
-/* Specific Section Tweaks */
+/* Utility */
 .page-break {
     page-break-before: always;
 }
+
+/* Links */
+a {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Specific Compliance Box Styling */
+/* We can't target by ID easily in standard markdown-pdf, but blockquotes capture it */
