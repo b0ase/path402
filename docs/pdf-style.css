@@ -1,97 +1,158 @@
-body {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-    color: #333;
-    padding: 2cm;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+    --primary: #111;
+    --secondary: #555;
+    --accent: #222;
+    --code-bg: #f5f5f5;
+    --border: #e0e0e0;
 }
 
-h1, h2, h3, h4, h5, h6 {
-    font-weight: 600;
-    margin-top: 1.5em;
-    margin-bottom: 0.5em;
-    color: #111;
+body {
+    font-family: 'Inter', sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: var(--primary);
+    margin: 0;
+    padding: 0;
+}
+
+/* Cover Page Logic would go here if we could target page 1 specifically easily, 
+   but for now we focus on clean layout */
+
+h1,
+h2,
+h3,
+h4 {
+    font-weight: 800;
+    margin-top: 2em;
+    margin-bottom: 0.8em;
+    color: #000;
+    line-height: 1.2;
 }
 
 h1 {
-    font-size: 24px;
-    border-bottom: 2px solid #eaeaea;
-    padding-bottom: 0.3em;
+    font-size: 24pt;
+    border-bottom: 3px solid #000;
+    padding-bottom: 15px;
+    margin-top: 0;
+    letter-spacing: -0.02em;
 }
 
 h2 {
-    font-size: 20px;
-    border-bottom: 1px solid #eaeaea;
-    padding-bottom: 0.3em;
+    font-size: 18pt;
+    border-bottom: 1px solid #000;
+    padding-bottom: 8px;
+    letter-spacing: -0.01em;
 }
 
 h3 {
-    font-size: 18px;
+    font-size: 14pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 1.5em;
 }
 
-code {
-    font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
-    font-size: 85%;
-    background-color: #f6f8fa;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-}
-
-pre {
-    background-color: #f6f8fa;
-    padding: 16px;
-    border-radius: 6px;
-    overflow: auto;
-    font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
-    font-size: 13px;
-    line-height: 1.45;
-}
-
-pre code {
-    background-color: transparent;
-    padding: 0;
-}
-
-blockquote {
-    border-left: 4px solid #dfe2e5;
-    padding: 0 1em;
-    color: #6a737d;
-    margin-left: 0;
-}
-
-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-bottom: 1em;
-}
-
-th, td {
-    padding: 6px 13px;
-    border: 1px solid #dfe2e5;
-}
-
-th {
-    background-color: #f6f8fa;
+h4 {
+    font-size: 12pt;
     font-weight: 600;
 }
 
-tr:nth-child(2n) {
-    background-color: #fcfcfc;
+p {
+    margin-bottom: 1em;
+    text-align: justify;
 }
 
-a {
-    color: #0366d6;
-    text-decoration: none;
+code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
 }
 
-a:hover {
-    text-decoration: underline;
+pre {
+    background: var(--code-bg);
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    overflow-x: hidden;
+    margin: 1.5em 0;
+    page-break-inside: avoid;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+    border: none;
+    color: #222;
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+blockquote {
+    border-left: 4px solid #000;
+    margin: 1.5em 0;
+    padding-left: 1.5em;
+    font-style: italic;
+    color: var(--secondary);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2em 0;
+    font-size: 0.95em;
+    page-break-inside: avoid;
+}
+
+th,
+td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+}
+
+th {
+    background-color: #f9f9f9;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85em;
+    letter-spacing: 0.05em;
+}
+
+tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+ul,
+ol {
+    margin-bottom: 1em;
+    padding-left: 2em;
+}
+
+li {
+    margin-bottom: 0.5em;
 }
 
 hr {
-    height: 0.25em;
-    padding: 0;
-    margin: 24px 0;
-    background-color: #e1e4e8;
     border: 0;
+    border-top: 1px solid var(--border);
+    margin: 3em 0;
+}
+
+/* Page Breaks */
+h1,
+h2,
+h3 {
+    page-break-after: avoid;
+}
+
+img {
+    max-width: 100%;
+}
+
+/* Specific Section Tweaks */
+.page-break {
+    page-break-before: always;
 }
