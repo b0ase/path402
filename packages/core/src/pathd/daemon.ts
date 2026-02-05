@@ -1,5 +1,5 @@
 /**
- * $pathd Daemon
+ * path402d Daemon
  *
  * The core daemon that:
  * 1. INDEXES - Reads from Supabase (populated by indexer on Hetzner)
@@ -60,7 +60,7 @@ export class Daemon {
     this.logger.info('');
     this.logger.info('╔═══════════════════════════════════════════════════════════╗');
     this.logger.info('║                                                           ║');
-    this.logger.info('║   $pathd - The Path 402 Token Protocol Daemon             ║');
+    this.logger.info('║   path402d - The Path 402 Token Protocol Daemon             ║');
     this.logger.info('║                                                           ║');
     this.logger.info('║   Connected to Supabase on Hetzner                        ║');
     this.logger.info('║   Real token data from BSV blockchain                     ║');
@@ -90,7 +90,7 @@ export class Daemon {
     }
 
     this.logger.info('');
-    this.logger.success('$pathd is running');
+    this.logger.success('path402d is running');
     this.logger.info(`  HTTP:    http://localhost:${this.config.port}`);
     this.logger.info(`  DB:      ${this.dbConnected ? 'Connected' : 'Disconnected'}`);
     this.logger.info(`  Supply:  ${this.state.token_stats?.circulatingSupply?.toLocaleString() || 'N/A'} tokens`);

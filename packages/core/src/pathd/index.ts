@@ -1,5 +1,5 @@
 /**
- * $pathd - The Path 402 Token Protocol Daemon
+ * path402d - The Path 402 Token Protocol Daemon
  *
  * INDEX → VALIDATE → SERVE → EARN
  */

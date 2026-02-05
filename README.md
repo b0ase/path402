@@ -5,7 +5,7 @@
 This package includes:
 
 - **MCP Server** — AI agent tools for Claude, GPT, etc.
-- **$pathd Daemon** — Index tokens, serve content, earn rewards
+- **path402d Daemon** — Index tokens, serve content, earn rewards
 
 [![npm version](https://badge.fury.io/js/path402.svg)](https://www.npmjs.com/package/path402)
 [![License: Open BSV](https://img.shields.io/badge/License-Open%20BSV-blue.svg)](LICENSE)
@@ -20,7 +20,7 @@ This package includes:
 npm install -g path402
 ```
 
-### Run $pathd Daemon
+### Run path402d Daemon
 
 ```bash
 path402d start
@@ -33,7 +33,7 @@ This starts a $402 network node that:
 - **SERVE** — Delivers content to verified token holders
 - **EARN** — Receives $402 rewards via PoW20
 
-### $pathd CLI Commands
+### path402d CLI Commands
 
 ```bash
 path402d start           # Start the daemon
@@ -44,7 +44,7 @@ path402d mine            # Start PoW20 mining (experimental)
 path402d --help          # Full help
 ```
 
-### Why Run $pathd?
+### Why Run path402d?
 
 **PoW forces operators into the open. Big nodes can't hide.**
 
