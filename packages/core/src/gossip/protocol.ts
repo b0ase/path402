@@ -47,6 +47,9 @@ export enum MessageType {
   CONTENT_REQUEST = 'CONTENT_REQUEST',
   CONTENT_OFFER = 'CONTENT_OFFER',
 
+  // Ticket Stamping
+  TICKET_STAMP = 'TICKET_STAMP',
+
   // Ping/Pong for keepalive
   PING = 'PING',
   PONG = 'PONG'
@@ -160,6 +163,15 @@ export interface PongPayload {
   request_timestamp: number;
 }
 
+export interface TicketStampPayload {
+  token_id: string;
+  address: string;
+  path: string;
+  timestamp: string;
+  indexer_pubkey: string;
+  indexer_signature: string;
+}
+
 // ── Message Envelope ───────────────────────────────────────────────
 
 export interface GossipMessage<T = unknown> {
@@ -254,6 +266,10 @@ export function createPong(nodeId: string, ping: PingPayload): GossipMessage<Pon
     nonce: ping.nonce,
     request_timestamp: ping.timestamp
   }, 30);
+}
+
+export function createTicketStamp(nodeId: string, stamp: TicketStampPayload): GossipMessage<TicketStampPayload> {
+  return createMessage(MessageType.TICKET_STAMP, nodeId, stamp);
 }
 
 // ── Message Validation ─────────────────────────────────────────────

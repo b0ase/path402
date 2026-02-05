@@ -1,12 +1,3 @@
-/**
- * $402 Wallet Service
- * 
- * Manages the agent's token portfolio, balance, and 
- * serving state. In production this would integrate with
- * HandCash or another BSV wallet. For now it maintains
- * local state for the session.
- */
-
 import {
   Dollar402Token,
   WalletState,
@@ -19,6 +10,9 @@ import {
   DEFAULT_MAX_PRICE_PER_ITEM,
   DEFAULT_SESSION_BUDGET
 } from "../constants.js";
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const bsv = require('bsv');
 
 // Session state (in production: persistent store + wallet integration)
 let walletState: WalletState = {
@@ -27,6 +21,75 @@ let walletState: WalletState = {
   totalSpent: 0,
   totalEarned: 0
 };
+
+let privateKey: any = null;
+let publicKey: any = null;
+let bsvAddress: any = null;
+
+/**
+ * Initialize the node identity from a private key
+ */
+export function initIdentity(wif?: string): void {
+  if (wif) {
+    try {
+      privateKey = bsv.PrivKey.fromWif(wif);
+      publicKey = bsv.PubKey.fromPrivKey(privateKey);
+      bsvAddress = bsv.Address.fromPubKey(publicKey);
+      console.log(`[Wallet] Identity initialized: ${bsvAddress.toString()}`);
+    } catch (err) {
+      console.error(`[Wallet] Invalid WIF provided: ${err}`);
+      generateNewIdentity();
+    }
+  } else {
+    generateNewIdentity();
+  }
+}
+
+function generateNewIdentity(): void {
+  privateKey = bsv.PrivKey.fromRandom();
+  publicKey = bsv.PubKey.fromPrivKey(privateKey);
+  bsvAddress = bsv.Address.fromPubKey(publicKey);
+  console.log(`[Wallet] Generated new ephemeral identity: ${bsvAddress.toString()}`);
+}
+
+/**
+ * Get the node's public key
+ */
+export function getPublicKey(): string {
+  return publicKey?.toString() || '';
+}
+
+/**
+ * Get the node's BSV address
+ */
+export function getAddress(): string {
+  return bsvAddress?.toString() || '';
+}
+
+/**
+ * Sign a message/data as a "stamp"
+ */
+export function signStamp(data: string): string {
+  if (!privateKey) throw new Error("Identity not initialized");
+
+  const hash = bsv.Hash.sha256(Buffer.from(data));
+  const sig = bsv.Ecdsa.sign(hash, privateKey);
+  return sig.toString();
+}
+
+/**
+ * Verify a stamp signature
+ */
+export function verifyStamp(data: string, signature: string, pubkeyStr: string): boolean {
+  try {
+    const hash = bsv.Hash.sha256(Buffer.from(data));
+    const sig = bsv.Sig.fromString(signature);
+    const pubkey = bsv.PubKey.fromString(pubkeyStr);
+    return bsv.Ecdsa.verify(hash, sig, pubkey);
+  } catch (err) {
+    return false;
+  }
+}
 
 /**
  * Get current wallet state

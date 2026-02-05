@@ -25,6 +25,8 @@ import {
   HolderUpdatePayload,
   PeerListPayload,
   PeerInfo,
+  TicketStampPayload,
+  createTicketStamp,
   GOSSIP_PORT
 } from './protocol.js';
 import {
@@ -206,6 +208,10 @@ export class GossipNode extends EventEmitter {
       case MessageType.HOLDER_UPDATE:
         this.handleHolderUpdate(peerId, msg as GossipMessage<HolderUpdatePayload>);
         break;
+
+      case MessageType.TICKET_STAMP:
+        this.handleTicketStamp(peerId, msg as GossipMessage<TicketStampPayload>);
+        break;
     }
 
     // Relay to other peers (if appropriate)
@@ -241,7 +247,7 @@ export class GossipNode extends EventEmitter {
 
       // Try to connect if we need more peers
       if (this.peerManager.getPeerCount() < this.config.maxPeers) {
-        this.peerManager.connect(peer.host, peer.port).catch(() => {});
+        this.peerManager.connect(peer.host, peer.port).catch(() => { });
       }
     }
   }
@@ -392,12 +398,23 @@ export class GossipNode extends EventEmitter {
     // For now, we'll primarily rely on transfer events
   }
 
+  private handleTicketStamp(peerId: string, msg: GossipMessage<TicketStampPayload>): void {
+    const stamp = msg.payload;
+    console.log(`[GossipNode] Ticket stamp received for ${stamp.address} on ${stamp.path}`);
+
+    // We can verify it locally if we want
+    // verifyStamp(stamp.data, stamp.indexer_signature, stamp.indexer_pubkey);
+
+    // Emit for other services to listen
+    this.emit('ticket:stamped', stamp);
+  }
+
   // ── Message Relay ──────────────────────────────────────────────
 
   private relayMessage(msg: GossipMessage, excludePeer: string): void {
     // Don't relay handshake messages
     if ([MessageType.HELLO, MessageType.HELLO_ACK, MessageType.PING, MessageType.PONG,
-         MessageType.PEER_LIST_REQUEST, MessageType.PEER_LIST].includes(msg.type)) {
+    MessageType.PEER_LIST_REQUEST, MessageType.PEER_LIST].includes(msg.type)) {
       return;
     }
 
@@ -451,6 +468,15 @@ export class GossipNode extends EventEmitter {
     const msg = createTransferEvent(this.nodeId, transfer);
     const sent = this.peerManager.broadcast(msg);
     console.log(`[GossipNode] Broadcast transfer to ${sent} peers`);
+  }
+
+  /**
+   * Broadcast a ticket stamp
+   */
+  broadcastTicketStamp(stamp: TicketStampPayload): void {
+    const msg = createTicketStamp(this.nodeId, stamp);
+    const sent = this.peerManager.broadcast(msg);
+    console.log(`[GossipNode] Broadcast ticket stamp to ${sent} peers`);
   }
 
   /**

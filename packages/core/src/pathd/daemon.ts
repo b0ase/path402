@@ -24,6 +24,8 @@ import {
   type TokenStats,
   type Holder,
 } from '../services/database.js';
+import { initIdentity, getPublicKey, getAddress, signStamp } from '../services/wallet.js';
+import { GossipNode } from '../gossip/node.js';
 
 interface IndexState {
   last_sync_at: string;
@@ -35,6 +37,7 @@ export class Daemon {
   private config: Config;
   private logger: Logger;
   private server: ReturnType<typeof createServer> | null = null;
+  private gossip: GossipNode | null = null;
   private state: IndexState;
   private startTime: number = 0;
   private isRunning = false;
@@ -57,13 +60,23 @@ export class Daemon {
     this.startTime = Date.now();
     this.isRunning = true;
 
+    // Initialize identity
+    initIdentity(this.config.walletKey);
+
+    // Start gossip node
+    this.gossip = new GossipNode({
+      port: 4020, // Default gossip port
+      verifyOnChain: true
+    });
+    await this.gossip.start();
+
     this.logger.info('');
     this.logger.info('╔═══════════════════════════════════════════════════════════╗');
     this.logger.info('║                                                           ║');
     this.logger.info('║   path402d - The Path 402 Token Protocol Daemon             ║');
     this.logger.info('║                                                           ║');
-    this.logger.info('║   Connected to Supabase on Hetzner                        ║');
-    this.logger.info('║   Real token data from BSV blockchain                     ║');
+    this.logger.info('║   Identity: ' + getAddress().padEnd(46) + '║');
+    this.logger.info('║   Pubkey:   ' + (getPublicKey().slice(0, 46) + '...').padEnd(46) + '║');
     this.logger.info('║                                                           ║');
     this.logger.info('╚═══════════════════════════════════════════════════════════╝');
     this.logger.info('');
@@ -239,7 +252,12 @@ export class Daemon {
       current_price_sats: this.state.token_stats?.currentPriceSats || 0,
       uptime_seconds: uptimeSeconds,
       last_sync_at: this.state.last_sync_at,
-      version: '1.0.0',
+      version: '1.3.1',
+      identity: {
+        address: getAddress(),
+        pubkey: getPublicKey(),
+        brc_compliance: ['BRC-100', 'BRC-103', 'BRC-104', 'BRC-105']
+      }
     }));
   }
 
@@ -251,8 +269,14 @@ export class Daemon {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      $402_version: '2.2',
+      $402_version: '3.0.0',
       protocol: '$402',
+      standards: {
+        payment: 'BRC-105',
+        auth: 'BRC-104',
+        identity: 'BRC-103',
+        wallet: 'BRC-100'
+      },
       token: {
         name: 'PATH402',
         ticker: 'PATH402.com',
@@ -264,7 +288,9 @@ export class Daemon {
         base_price_sats: 500,
       },
       node: {
-        id: `pathd-${this.config.port}`,
+        id: `path402d-${this.config.port}`,
+        address: getAddress(),
+        pubkey: getPublicKey(),
         uptime: Math.floor((Date.now() - this.startTime) / 1000),
         holder_count: this.state.holder_count,
       },
@@ -384,31 +410,42 @@ export class Daemon {
 
   /**
    * Serve content to verified token holders
+   * 
+   * ALIGNMENT (Bob's suggestion):
+   * 1. BRC-105 for 402 challenge
+   * 2. BRC-104 for multi-auth/stamping
    */
   private async handleContent(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-    // Check for authentication headers
-    const address = req.headers['x-$402-address'] as string;
-    const signature = req.headers['x-$402-signature'] as string;
+    // BRC-104 headers
+    const address = req.headers['x-bsv-auth-identity-key'] as string; // Using identity key as address for simplicity in core
+    const signature = req.headers['x-bsv-auth-signature'] as string;
+    const nonce = req.headers['x-bsv-auth-nonce'] as string;
 
     if (!address) {
-      // Return 402 Payment Required with real pricing
+      // BRC-105 Payment Required
       const stats = this.state.token_stats;
+      const price = stats?.currentPriceSats || 500;
+      const derivationPrefix = Math.random().toString(36).substring(2, 12);
 
       res.writeHead(402, {
         'Content-Type': 'application/json',
-        'X-$402-Version': '2.2.0',
-        'X-$402-Price': String(stats?.currentPriceSats || 500),
-        'X-$402-Token': 'PATH402.com',
-        'X-$402-Model': 'sqrt_decay',
-        'X-$402-Supply': String(stats?.circulatingSupply || 0),
+        'Cache-Control': 'no-cache',
+        // BRC-105 Normative Headers
+        'x-bsv-payment-satoshis-required': String(price),
+        'x-bsv-payment-derivation-prefix': derivationPrefix,
+        'x-bsv-payment-version': '1.0',
+        // Historical/UX Fallback
+        'X-$402-Version': '3.0.0',
+        'X-$402-Token': 'PATH402.com'
       });
+
       res.end(JSON.stringify({
         error: 'Payment Required',
-        price_sats: stats?.currentPriceSats || 500,
+        price_sats: price,
         token: 'PATH402.com',
-        supply: stats?.circulatingSupply || 0,
-        accepts: ['bsv'],
+        derivationPrefix,
         buy_url: 'https://path402.com/token',
+        notice: 'Support BRC-105 compliant wallets'
       }));
       return;
     }
@@ -420,20 +457,50 @@ export class Daemon {
       res.writeHead(403, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         error: 'Access denied',
-        reason: 'No tokens held for this address',
+        reason: 'Identity does not hold required tokens',
         buy_url: 'https://path402.com/token',
       }));
       return;
     }
 
     // Access granted - serve content
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const timestamp = new Date().toISOString();
+    const stampData = `${address}:${path}:${timestamp}:${nonce || ''}`;
+    const indexerSignature = signStamp(stampData);
+
+    // Broadcast stamp to gossip network (Proof of Serve)
+    if (this.gossip) {
+      this.gossip.broadcastTicketStamp({
+        token_id: 'PATH402.com',
+        address,
+        path,
+        timestamp,
+        indexer_pubkey: getPublicKey(),
+        indexer_signature: indexerSignature
+      });
+    }
+
+    // BRC-104 Auth Response Headers (The "Indexer Stamp")
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'x-bsv-auth-identity-key': getPublicKey(),
+      'x-bsv-auth-signature': indexerSignature,
+      'x-bsv-auth-nonce': nonce || '',
+      'x-bsv-auth-your-nonce': Math.random().toString(36).substring(2, 12),
+      'x-bsv-auth-version': '1.0'
+    });
+
     res.end(JSON.stringify({
       access: true,
       holder: holder.handle || address,
       tokens_held: holder.balance,
       content: `Welcome to $PATH402 gated content. You hold ${holder.balance.toLocaleString()} tokens.`,
-      served_at: new Date().toISOString(),
+      served_at: timestamp,
+      indexer_stamp: {
+        pubkey: getPublicKey(),
+        signature: indexerSignature,
+        data: stampData
+      }
     }));
   }
 
