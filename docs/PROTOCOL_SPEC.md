@@ -8,7 +8,7 @@
 
 ## Overview
 
-$402 is a protocol for tokenized attention markets. Every participant mints their own token, creating a market for their time and content. The network scales socially through genuine relationships, not viral mechanics.
+$402 is a protocol for tokenized attention markets. Every participant mints their own token, creating a market for their time and content. The protocol harnesses viral memecoin dynamics to bootstrap the creator economy—every domain becomes a shareholder company, every path becomes a tradable asset.
 
 **The Progression**:
 1. **Content Tokenization** (v1-v2): Turn URL paths into shareholder businesses
@@ -448,7 +448,7 @@ $402 creates an attention economy where:
 5. **KYC is voluntary but incentivized** - Need it for dividends
 6. **BSV enables micropayments** - 1 token/second is economically viable
 
-The network scales through genuine social investment, not viral growth hacks.
+The network scales through viral memecoin dynamics—combining speculation, ownership, and utility to bootstrap the creator economy.
 
 ---
 
