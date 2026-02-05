@@ -399,6 +399,16 @@ Supply sold: 999,999 → Price: 0.5 sats
 
 ---
 
+## Legal Compliance & Liability
+
+### Corporate Register vs Token Ownership
+
+The company has liability and must produce a confirmation statement each year showing an up-to-date register of members. However, Members can trade tokens that act as a claim on their shares without permission.
+
+So while the confirmation statement may say Alice holds Title, she may have already sold her interest to Bob, who has already sold it to Charlie. The confirmation statement says Alice owns the share on the register, but that is still legally compliant, even though the reality is that Charlie holds the asset. As long as each individual pays their own taxes, they are compliant too.
+
+---
+
 ## Roadmap
 
 ### Phase 1: Core Protocol ✓
@@ -506,4 +516,4 @@ node_reward = (node_serves / total_network_serves) × daily_reward_pool
 ---
 
 *Version: 3.0.0*
-*Last Updated: 2026-02-04*
+*Last Updated: 2026-02-05*
