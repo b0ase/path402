@@ -17,10 +17,15 @@
     "build:core": "pnpm --filter @path402/core build",
     "build:mcp": "pnpm --filter path402 build",
     "dev:core": "pnpm --filter @path402/core dev",
-    "start:mcp": "pnpm --filter path402 start"
+    "start:mcp": "pnpm --filter path402 start",
+    "generate-pdf": "tsx scripts/generate-pdf.ts"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
+    "@types/node": "^22.0.0",
+    "marked": "^17.0.1",
+    "puppeteer": "^24.36.1",
+    "tsx": "^4.21.0",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0"
   }
