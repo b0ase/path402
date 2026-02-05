@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* INDUSTRIAL BLUEPRINT - Light Mode */
 :root {
   --bg-surface: #ffffff;
   --bg-surface-secondary: #fafafa;
@@ -12,97 +11,135 @@
   --text-muted: #71717a;
   --border-primary: #e4e4e7;
   --border-secondary: #d4d4d8;
+  --accent-primary: #000000;
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.1);
 }
 
-/* INDUSTRIAL BLUEPRINT - Dark Mode */
 .dark {
   --bg-surface: #000000;
-  --bg-surface-secondary: #09090b;
-  --bg-card: #18181b;
+  --bg-surface-secondary: #050505;
+  --bg-card: #0a0a0a;
   --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --border-primary: #27272a;
-  --border-secondary: #3f3f46;
+  --text-muted: #52525b;
+  --border-primary: #18181b;
+  --border-secondary: #27272a;
+  --accent-primary: #ffffff;
+  --glass-bg: rgba(0, 0, 0, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
 }
 
 body {
   background-color: var(--bg-surface);
   color: var(--text-primary);
-  font-family: ui-monospace, 'JetBrains Mono', 'Fira Code', monospace;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  font-family: 'Inter', ui-monospace, sans-serif;
+  transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-x: hidden;
 }
 
-/* Selection - light */
-::selection {
-  background: #000000;
-  color: #ffffff;
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
-/* Selection - dark */
-.dark ::selection {
-  background: #ffffff;
-  color: #000000;
+/* Glassmorphism */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid var(--glass-border);
 }
 
-/* Scrollbar - light */
+.glass-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
+
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #fafafa;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: var(--border-primary);
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1aa;
+  background: var(--border-secondary);
 }
 
-/* Scrollbar - dark */
-.dark ::-webkit-scrollbar-track {
-  background: #09090b;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #27272a;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
-
-/* Focus styles */
-*:focus-visible {
-  outline: 1px solid var(--border-secondary);
-  outline-offset: 2px;
-}
-
-/* INDUSTRIAL Card - Sharp corners, heavy borders */
+/* Cards */
 .card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-primary);
-  padding: 1.5rem;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .card:hover {
-  border-color: var(--border-secondary);
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
 
-/* INDUSTRIAL Section label */
+/* Buttons */
+.btn-premium {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  background: var(--accent-primary);
+  color: var(--bg-surface);
+}
+
+.btn-premium::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: rotate(45deg);
+  transition: transform 0.6s ease;
+}
+
+.btn-premium:hover::after {
+  transform: rotate(45deg) translate(50%, 50%);
+}
+
+/* Section label */
 .section-label {
   font-size: 10px;
-  font-weight: bold;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  margin-bottom: 1rem;
+  letter-spacing: 0.3em;
+  margin-bottom: 1.5rem;
   color: var(--text-muted);
-  font-family: ui-monospace, monospace;
 }
 
 /* Electron window drag region */
@@ -114,6 +151,7 @@ body {
 
 .titlebar button,
 .titlebar a,
+.titlebar icons,
 .titlebar input,
 .no-drag {
   -webkit-app-region: no-drag;

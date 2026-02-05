@@ -15,6 +15,7 @@
     "@path402/core": "workspace:*",
     "@path402/ui": "workspace:*",
     "@tanstack/react-query": "^5.60.0",
+    "framer-motion": "^12.31.1",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

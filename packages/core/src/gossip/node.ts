@@ -27,6 +27,8 @@ import {
   PeerInfo,
   TicketStampPayload,
   createTicketStamp,
+  ChatPayload,
+  createChatMessage,
   GOSSIP_PORT
 } from './protocol.js';
 import {
@@ -60,6 +62,7 @@ export interface GossipNodeEvents {
   'token:discovered': (tokenId: string, token: AnnounceTokenPayload) => void;
   'transfer:received': (transfer: TransferEventPayload) => void;
   'peer:count': (count: number) => void;
+  'chat:received': (chat: ChatPayload) => void;
 }
 
 const DEFAULT_BOOTSTRAP_PEERS: string[] = [
@@ -211,6 +214,10 @@ export class GossipNode extends EventEmitter {
 
       case MessageType.TICKET_STAMP:
         this.handleTicketStamp(peerId, msg as GossipMessage<TicketStampPayload>);
+        break;
+
+      case MessageType.CHAT_MESSAGE:
+        this.handleChatMessage(peerId, msg as GossipMessage<ChatPayload>);
         break;
     }
 
@@ -409,6 +416,14 @@ export class GossipNode extends EventEmitter {
     this.emit('ticket:stamped', stamp);
   }
 
+  private handleChatMessage(peerId: string, msg: GossipMessage<ChatPayload>): void {
+    const chat = msg.payload;
+    console.log(`[GossipNode] Chat message from ${chat.sender_address} in ${chat.channel}`);
+
+    // Emit for UI/hooks
+    this.emit('chat:received', chat);
+  }
+
   // ── Message Relay ──────────────────────────────────────────────
 
   private relayMessage(msg: GossipMessage, excludePeer: string): void {
@@ -477,6 +492,15 @@ export class GossipNode extends EventEmitter {
     const msg = createTicketStamp(this.nodeId, stamp);
     const sent = this.peerManager.broadcast(msg);
     console.log(`[GossipNode] Broadcast ticket stamp to ${sent} peers`);
+  }
+
+  /**
+   * Broadcast a chat message
+   */
+  broadcastChatMessage(chat: ChatPayload): void {
+    const msg = createChatMessage(this.nodeId, chat);
+    const sent = this.peerManager.broadcast(msg);
+    console.log(`[GossipNode] Broadcast chat message to ${sent} peers`);
   }
 
   /**

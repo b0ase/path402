@@ -227,10 +227,12 @@ export class Daemon {
       this.handleHolderDetails(req, res, path);
     } else if (path.startsWith('/content/')) {
       this.handleContent(req, res, path);
-    } else if (path === '/api/sync' && req.method === 'POST') {
-      this.handleTriggerSync(req, res);
     } else if (path === '/metrics') {
       this.handleMetrics(req, res);
+    } else if (path === '/api/chat' && req.method === 'POST') {
+      this.handleSendChat(req, res);
+    } else if (path === '/api/chat/stream') {
+      this.handleChatStream(req, res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -562,6 +564,62 @@ export class Daemon {
     this.logger.info('  Scale → Physical presence → Regulatory visibility');
     this.logger.info('  Big nodes can\'t hide. Big nodes must identify themselves.');
     this.logger.info('');
+  }
+
+  /**
+   * Send a chat message via gossip
+   */
+  private async handleSendChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { channel, content, handle } = JSON.parse(body);
+
+        if (!this.gossip) {
+          throw new Error('Gossip node not started');
+        }
+
+        this.gossip.broadcastChatMessage({
+          channel: channel || 'global',
+          content,
+          sender_handle: handle,
+          sender_address: getAddress(),
+          timestamp: Date.now()
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }));
+      }
+    });
+  }
+
+  /**
+   * Stream chat messages via SSE
+   */
+  private handleChatStream(_req: IncomingMessage, res: ServerResponse): void {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
+
+    const onChat = (chat: any) => {
+      res.write(`data: ${JSON.stringify(chat)}\n\n`);
+    };
+
+    if (this.gossip) {
+      this.gossip.on('chat:received', onChat);
+    }
+
+    _req.on('close', () => {
+      if (this.gossip) {
+        this.gossip.off('chat:received', onChat);
+      }
+    });
   }
 
   /**

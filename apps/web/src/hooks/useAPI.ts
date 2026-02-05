@@ -47,6 +47,14 @@ export interface Peer {
   reputation_score: number;
 }
 
+export interface ChatMessage {
+  channel: string;
+  content: string;
+  sender_handle?: string;
+  sender_address: string;
+  timestamp: number;
+}
+
 // Fetch helper
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   // Try Electron IPC first
@@ -101,6 +109,22 @@ export function useOpportunities() {
   });
 }
 
+export function useChatStream(onMessage: (msg: ChatMessage) => void) {
+  return useQuery({
+    queryKey: ['chat-stream'],
+    queryFn: () => {
+      const eventSource = new EventSource(`${API_BASE}/api/chat/stream`);
+      eventSource.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        onMessage(msg);
+      };
+      return () => eventSource.close();
+    },
+    staleTime: Infinity,
+    enabled: typeof window !== 'undefined'
+  });
+}
+
 // Mutations
 export function useToggleSpeculation() {
   const queryClient = useQueryClient();
@@ -144,6 +168,22 @@ export function useToggleAutoAcquire() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['status'] });
+    }
+  });
+}
+
+export function useSendMessage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ channel, content, handle }: { channel: string; content: string; handle?: string }) => {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, content, handle })
+      });
+      if (!res.ok) throw new Error('Failed to send message');
+      return res.json();
     }
   });
 }
