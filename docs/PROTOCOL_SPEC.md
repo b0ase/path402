@@ -352,7 +352,75 @@ Off-chain (Gossip):
 
 ---
 
+
 ## Pricing Formula
+
+## Ticket Stamp Chains: The Indexer Solution
+
+**The Core Innovation**: Tickets accumulate cryptographic stamps as they're validated and used, creating a trust layer that solves the indexer incentive problem through pure Bitcoin economics.
+
+### The Problem
+
+When Harry buys a ticket to `fred.com/$video`:
+1. Server must validate the ticket UTXO exists on-chain
+2. Blockchain is large, validation is slow without indexing
+3. If all payment goes to Fred, indexers have no incentive to index
+
+**The Paradox**: We need indexers to make the system fast, but indexers need payment to exist.
+
+### The Solution: Stamp Chains
+
+Every time a ticket is validated and used, the indexer adds a **stamp** to the ticket's chain. Payment is split between creator and indexer:
+
+```
+Ticket Price: 1000 sats
+  ├─ Creator (Fred): 950 sats (95%)
+  └─ Indexer Fee: 50 sats (5%)
+```
+
+**Stamp Chain Structure**:
+```json
+{
+  "stampChain": [
+    {
+      "seq": 1,
+      "indexer": "indexer-a.com",
+      "owner": "harry_pubkey",
+      "blockHeight": 837492,
+      "feePaid": 50,
+      "signature": "304402..."
+    }
+  ]
+}
+```
+
+### Trust Accumulation
+
+Tickets gain value as stamp chains grow:
+
+```
+Fresh ticket (0 stamps):     1000 sats
+After 100 stamps:            1300 sats (+30% trust premium)
+After 1000 stamps:           2000 sats (+100% viral premium)
+```
+
+### Network Effects
+
+1. **Economic Filtering**: Spam gets ignored (no fee potential), viral content attracts indexers
+2. **Content Discovery**: Sort by stamp count = quality ranking
+3. **Indexer Competition**: Popular content = higher revenue = better service
+4. **Creator Incentives**: Viral content accumulates stamps faster, increasing secondary market value
+
+### Why This Works
+
+- **No Bootstrap Token Needed**: Stamps ARE the proof of work
+- **Pure Bitcoin Economics**: Fees flow naturally from users → creators + indexers
+- **Self-Sustaining**: Market forces optimize service quality
+- **Viral Dynamics**: Positive feedback loop between popularity and infrastructure
+
+**See**: [STAMP_CHAIN_SPEC.md](./STAMP_CHAIN_SPEC.md) for complete technical specification.
+
+---
 
 ### sqrt_decay Model
 
