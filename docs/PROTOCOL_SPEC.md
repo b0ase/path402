@@ -10,9 +10,9 @@
 
 $402 is a protocol for tokenized attention markets. Every participant mints their own token, creating a market for their time and content. The protocol harnesses viral memecoin dynamics to bootstrap the creator economy—every domain becomes a shareholder company, every path becomes a tradable asset.
 
-**The Progression**:
-1. **Content Tokenization** (v1-v2): Turn URL paths into shareholder businesses
-2. **Personal Tokenization** (v3): Turn individuals into attention markets
+**Conventions**:
+- **The "$" Prefix**: A non-normative UX convention used to signify paywalled content to humans (e.g. `example.com/$video`). The technical enforcement is handled via BRC-105 challenge/response.
+- **Tickets**: While $402 favors $CREATOR tokens, a "ticket" is treated as an abstract spendable instrument. Any BSV-based asset (UTXO or token) that a server accepts under the BRC-105 payment proof model can serve as a ticket.
 
 ## Core Principles
 
@@ -353,30 +353,49 @@ Off-chain (Gossip):
 ---
 
 
-## Pricing Formula
+## Authentication & Payments (BRC Alignment)
 
-## Ticket Stamp Chains: The Indexer Solution
+$402 leverages established Bitcoin SV standards (BRCs) to ensure broad interoperability with existing wallets and services.
 
-**The Core Innovation**: Tickets accumulate cryptographic stamps as they're validated and used, creating a trust layer that solves the indexer incentive problem through pure Bitcoin economics.
+### 1. Payment Handshake (BRC-105)
+The normative mechanism for the `402 Payment Required` flow is **BRC-105**.
+- **Challenge**: Server returns 402 with `x-bsv-payment-satoshis-required`, `x-bsv-payment-derivation-prefix`, and `x-bsv-payment-version`.
+- **Response**: Client provides payment via the `x-bsv-payment` header containing a transaction and proof of derivation.
 
-### The Problem
+### 2. Mutual Authentication (BRC-103/104)
+Authenticated peer sessions use **BRC-103** for mutual authentication and **BRC-104** for HTTP transport.
+- **Client Identity**: Proved via `x-bsv-auth-identity-key` and `x-bsv-auth-signature`.
+- **Origin Binding**: Every payment is bound to an authenticated session, preventing ticket replay attacks.
 
-When Harry buys a ticket to `fred.com/$video`:
-1. Server must validate the ticket UTXO exists on-chain
-2. Blockchain is large, validation is slow without indexing
-3. If all payment goes to Fred, indexers have no incentive to index
+### 3. Wallet Interface (BRC-100)
+Clients SHOULD implement the **BRC-100** wallet interface, allowing $402 applications to interact with HandCash, Yours Wallet, and other compliant providers.
 
-**The Paradox**: We need indexers to make the system fast, but indexers need payment to exist.
+---
 
-### The Solution: Stamp Chains
+## Ticket Stamp Chains: The Indexer Overlay
 
-Every time a ticket is validated and used, the indexer adds a **stamp** to the ticket's chain. Payment is split between creator and indexer:
+**The Core Innovation**: Tickets accumulate cryptographic stamps as they're validated and used. This creates a trust layer that solves the indexer incentive problem through **BRC-22/24 Overlay** dynamics.
 
+### The Problem: Indexer Incentives
+When a user buys a ticket, indexers must validate the UTXO. This costs resources. If creators keep 100% of the revenue, indexers have no incentive to provide high-speed verification.
+
+### The Solution: Paid Indexing (95/5 Split)
+Payment is split between creator and indexer at the point of verification.
 ```
 Ticket Price: 1000 sats
-  ├─ Creator (Fred): 950 sats (95%)
+  ├─ Creator: 950 sats (95%)
   └─ Indexer Fee: 50 sats (5%)
 ```
+
+### Stamp Chain as Social Proof
+Every time an indexer verifies a ticket access, they generate an **Overlay Entry** (signed validation). These "Stamps" are gossiped across the network as Proof of Serve.
+
+**Security Model (0-conf)**:
+- **Payment Attempt**: Receipt of a transaction to the creator's address.
+- **Acceptance Policy**: Indexers may use 0-conf risk management (double-spend monitoring) to grant immediate access for low-value tickets. High-value tickets may require block confirmation.
+
+### Discovery via BRC-24
+The $402 gossip network acts as a **BRC-24 Lookup Service**. Clients can query the network for the "most stamped" paths to discover high-quality, viral content.
 
 **Stamp Chain Structure**:
 ```json
