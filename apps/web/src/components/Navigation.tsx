@@ -8,7 +8,8 @@ const navItems = [
   { href: '/portfolio/', label: 'PORTFOLIO' },
   { href: '/market/', label: 'MARKET' },
   { href: '/exchange/', label: 'EXCHANGE' },
-  { href: '/upload/', label: 'UPLOAD' },
+  { href: '/upload/', label: 'ISSUE' },
+  { href: '/chat/', label: 'CHAT' },
   { href: '/live/', label: 'LIVE' }
 ];
 
@@ -28,8 +29,8 @@ export function Navigation() {
                 key={item.href}
                 href={item.href}
                 className={`px-6 h-full flex items-center text-[10px] uppercase tracking-[0.2em] font-mono font-bold transition-colors whitespace-nowrap ${isActive
-                    ? 'bg-black dark:bg-white text-white dark:text-black'
-                    : 'bg-gray-50 dark:bg-zinc-900/10 text-gray-500 hover:text-black dark:hover:text-white'
+                  ? 'bg-black dark:bg-white text-white dark:text-black'
+                  : 'bg-gray-50 dark:bg-zinc-900/10 text-gray-500 hover:text-black dark:hover:text-white'
                   } ${i < arr.length - 1 ? 'border-r border-gray-200 dark:border-gray-800' : ''}`}
               >
                 {item.label}

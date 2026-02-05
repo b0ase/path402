@@ -50,6 +50,9 @@ export enum MessageType {
   // Ticket Stamping
   TICKET_STAMP = 'TICKET_STAMP',
 
+  // Real-time Chat
+  CHAT_MESSAGE = 'CHAT_MESSAGE',
+
   // Ping/Pong for keepalive
   PING = 'PING',
   PONG = 'PONG'
@@ -172,6 +175,16 @@ export interface TicketStampPayload {
   indexer_signature: string;
 }
 
+export interface ChatPayload {
+  token_id?: string;   // Optional: scoped to a token channel
+  channel: string;     // e.g., 'global', '$alice', '$bob/chatroom'
+  content: string;
+  sender_handle?: string;
+  sender_address: string;
+  signature?: string;
+  timestamp: number;
+}
+
 // ── Message Envelope ───────────────────────────────────────────────
 
 export interface GossipMessage<T = unknown> {
@@ -270,6 +283,10 @@ export function createPong(nodeId: string, ping: PingPayload): GossipMessage<Pon
 
 export function createTicketStamp(nodeId: string, stamp: TicketStampPayload): GossipMessage<TicketStampPayload> {
   return createMessage(MessageType.TICKET_STAMP, nodeId, stamp);
+}
+
+export function createChatMessage(nodeId: string, chat: ChatPayload): GossipMessage<ChatPayload> {
+  return createMessage(MessageType.CHAT_MESSAGE, nodeId, chat);
 }
 
 // ── Message Validation ─────────────────────────────────────────────
