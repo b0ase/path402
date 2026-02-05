@@ -1,5 +1,5 @@
 /**
- * $pathd Configuration
+ * path402d Configuration
  */
 
 import { homedir } from 'os';

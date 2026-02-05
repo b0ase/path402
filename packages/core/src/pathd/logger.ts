@@ -1,5 +1,5 @@
 /**
- * $pathd Logger
+ * path402d Logger
  */
 
 export class Logger {

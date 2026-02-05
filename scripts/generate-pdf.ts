@@ -13,7 +13,7 @@ const CSS = `
 body {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 11pt;
-  line-height: 1.5;
+  line-height: 1.8;
   color: #000;
   background: white;
   padding: 0.75in;
@@ -23,7 +23,7 @@ body {
 h1 {
   font-size: 24pt;
   font-weight: bold;
-  margin-bottom: 6pt;
+  margin-bottom: 18pt;
   margin-top: 0;
   page-break-after: avoid;
 }
@@ -31,29 +31,29 @@ h1 {
 h2 {
   font-size: 16pt;
   font-weight: bold;
-  margin-top: 24pt;
-  margin-bottom: 12pt;
+  margin-top: 36pt;
+  margin-bottom: 18pt;
   page-break-after: avoid;
 }
 
 h3 {
   font-size: 13pt;
   font-weight: bold;
-  margin-top: 18pt;
-  margin-bottom: 9pt;
+  margin-top: 24pt;
+  margin-bottom: 12pt;
   page-break-after: avoid;
 }
 
 h4 {
   font-size: 12pt;
   font-weight: bold;
-  margin-top: 12pt;
-  margin-bottom: 6pt;
+  margin-top: 18pt;
+  margin-bottom: 9pt;
   page-break-after: avoid;
 }
 
 p {
-  margin-bottom: 12pt;
+  margin-bottom: 15pt;
   text-align: justify;
   orphans: 3;
   widows: 3;
@@ -73,9 +73,9 @@ blockquote p {
 pre {
   font-family: 'Courier New', Courier, monospace;
   font-size: 10pt;
-  line-height: 1.4;
-  margin: 12pt 0;
-  padding: 6pt;
+  line-height: 1.6;
+  margin: 18pt 0;
+  padding: 12pt;
   border: 1pt solid #ccc;
   background: #f9f9f9;
   overflow-x: auto;
@@ -98,7 +98,7 @@ pre code {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 12pt 0;
+  margin: 18pt 0;
   font-size: 11pt;
   page-break-inside: avoid;
 }
@@ -106,24 +106,24 @@ table {
 th {
   text-align: left;
   font-weight: bold;
-  padding: 6pt 8pt;
+  padding: 9pt 12pt;
   border-bottom: 2pt solid #000;
 }
 
 td {
-  padding: 6pt 8pt;
+  padding: 9pt 12pt;
   border-bottom: 1pt solid #ccc;
   vertical-align: top;
 }
 
 /* Lists */
 ul, ol {
-  margin: 12pt 0;
+  margin: 15pt 0;
   padding-left: 36pt;
 }
 
 li {
-  margin-bottom: 6pt;
+  margin-bottom: 9pt;
   orphans: 2;
   widows: 2;
 }
