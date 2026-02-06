@@ -17,6 +17,9 @@ import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculati
 import { IntelligenceProvider } from '../intelligence/provider.js';
 import { ClaudeIntelligenceProvider } from '../intelligence/claude.js';
 import { GUIServer } from '../gui/server.js';
+import { FsContentStore } from '../content/fs-store.js';
+import { loadDemoContent } from '../content/demo-loader.js';
+import type { ContentStore } from '../content/store.js';
 import {
   initLocalDb,
   closeDb,
@@ -26,7 +29,8 @@ import {
   getAllTokens,
   getPortfolio,
   getPortfolioSummary,
-  getActivePeers
+  getActivePeers,
+  getContentCacheStats
 } from '../db/index.js';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -82,6 +86,10 @@ export interface AgentStatus {
     positions: number;
     exposure: number;
   };
+  content: {
+    items: number;
+    totalBytes: number;
+  };
 }
 
 // ── Autonomous Agent ───────────────────────────────────────────────
@@ -95,6 +103,7 @@ export class Path402Agent extends EventEmitter {
   private intelligenceProvider: IntelligenceProvider | null = null;
   private guiServer: GUIServer | null = null;
   private miningService: ProofOfIndexingService | null = null;
+  private contentStore: FsContentStore | null = null;
   private config: AgentConfig;
   private running = false;
 
@@ -140,6 +149,20 @@ export class Path402Agent extends EventEmitter {
 
     // Setup event handlers
     this.setupEventHandlers();
+
+    // Initialize content store and load demo content
+    this.contentStore = new FsContentStore(this.config.dataDir);
+    try {
+      const loaded = await loadDemoContent(this.contentStore);
+      if (loaded > 0) {
+        console.log(`[Agent] Content store ready with ${loaded} new demo items`);
+      } else {
+        const stats = getContentCacheStats();
+        console.log(`[Agent] Content store ready (${stats.totalItems} items, ${Math.round(stats.totalBytes / 1024 / 1024)}MB)`);
+      }
+    } catch (err) {
+      console.warn('[Agent] Demo content loading failed:', err);
+    }
 
     // Start GUI if enabled
     if (this.config.guiEnabled !== false) {
@@ -316,7 +339,11 @@ export class Path402Agent extends EventEmitter {
         strategy: 'none',
         positions: 0,
         exposure: 0
-      }
+      },
+      content: (() => {
+        const stats = getContentCacheStats();
+        return { items: stats.totalItems, totalBytes: stats.totalBytes };
+      })()
     };
   }
 
@@ -416,6 +443,13 @@ export class Path402Agent extends EventEmitter {
    */
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Get the content store instance
+   */
+  getContentStore(): FsContentStore | null {
+    return this.contentStore;
   }
 }
 

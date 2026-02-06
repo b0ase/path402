@@ -2,7 +2,7 @@
   "name": "@path402/web",
   "version": "4.0.0-alpha.1",
   "private": true,
-  "description": "Path402 Web App - Next.js dashboard",
+  "description": "Path402 Web App - $402 Client",
   "type": "module",
   "scripts": {
     "dev": "next dev -p 4023",

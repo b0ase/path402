@@ -8,31 +8,43 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./db": {
       "types": "./dist/db/index.d.ts",
-      "import": "./dist/db/index.js"
+      "import": "./dist/db/index.js",
+      "require": "./dist/db/index.js"
     },
     "./wallet": {
       "types": "./dist/wallet/index.d.ts",
-      "import": "./dist/wallet/index.js"
+      "import": "./dist/wallet/index.js",
+      "require": "./dist/wallet/index.js"
     },
     "./token": {
       "types": "./dist/token/mint.d.ts",
-      "import": "./dist/token/mint.js"
+      "import": "./dist/token/mint.js",
+      "require": "./dist/token/mint.js"
     },
     "./gossip": {
       "types": "./dist/gossip/index.d.ts",
-      "import": "./dist/gossip/index.js"
+      "import": "./dist/gossip/index.js",
+      "require": "./dist/gossip/index.js"
+    },
+    "./content": {
+      "types": "./dist/content/index.d.ts",
+      "import": "./dist/content/index.js",
+      "require": "./dist/content/index.js"
     },
     "./services": {
       "types": "./dist/services/index.d.ts",
-      "import": "./dist/services/index.js"
+      "import": "./dist/services/index.js",
+      "require": "./dist/services/index.js"
     },
     "./mcp": {
       "types": "./dist/mcp.d.ts",
-      "import": "./dist/mcp.js"
+      "import": "./dist/mcp.js",
+      "require": "./dist/mcp.js"
     }
   },
   "scripts": {

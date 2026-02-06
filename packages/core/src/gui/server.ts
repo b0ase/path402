@@ -1,7 +1,7 @@
 /**
  * $402 Client Web GUI Server
  *
- * Serves a local dashboard for the Path402 client.
+ * Serves the $402 web GUI for the Path402 client.
  * Shows node status, portfolio, peers, and speculation controls.
  */
 
@@ -15,7 +15,10 @@ import {
   getPortfolio,
   getActivePeers,
   getAllPeers,
-  getSpeculationOpportunities
+  getSpeculationOpportunities,
+  getAllCachedContent,
+  getContentCacheStats,
+  getContentByHash
 } from '../db/index.js';
 
 const _dirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
@@ -36,7 +39,7 @@ export class GUIServer {
     this.server = createServer((req, res) => this.handleRequest(req, res));
 
     this.server.listen(this.port, () => {
-      console.log(`[GUI] Dashboard available at \x1b[36mhttp://localhost:${this.port}\x1b[0m`);
+      console.log(`[GUI] $402 available at \x1b[36mhttp://localhost:${this.port}\x1b[0m`);
       if (this.uiPath) {
         console.log(`[GUI] Serving static UI from: ${this.uiPath}`);
       }
@@ -58,7 +61,9 @@ export class GUIServer {
       'jpg': 'image/jpeg',
       'gif': 'image/gif',
       'svg': 'image/svg+xml',
-      'ico': 'image/x-icon'
+      'ico': 'image/x-icon',
+      'mp4': 'video/mp4',
+      'webm': 'video/webm'
     };
     return mimes[ext || ''] || 'text/plain';
   }
@@ -116,10 +121,10 @@ export class GUIServer {
         if (found) return;
       }
 
-      // Fallback to embedded dashboard for index
+      // Fallback to embedded HTML for index
       if (url === '/' || url === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(this.getDashboardHTML());
+        res.end(this.getEmbeddedHTML());
         return;
       }
 
@@ -200,13 +205,62 @@ export class GUIServer {
         }
         break;
 
+      case '/api/content':
+        res.end(JSON.stringify(getAllCachedContent()));
+        break;
+
+      case '/api/content/stats': {
+        const stats = getContentCacheStats();
+        res.end(JSON.stringify(stats));
+        break;
+      }
+
       default:
+        // Handle parameterized routes
+        if (url.startsWith('/api/content/serve/')) {
+          const hash = url.replace('/api/content/serve/', '');
+          await this.handleContentServe(hash, req, res);
+          return;
+        }
+
         res.writeHead(404);
         res.end(JSON.stringify({ error: 'API endpoint not found' }));
     }
   }
 
-  private getDashboardHTML(): string {
+  private async handleContentServe(hash: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const contentStore = this.agent.getContentStore?.();
+    if (!contentStore) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Content store not available' }));
+      return;
+    }
+
+    const meta = getContentByHash(hash);
+    if (!meta) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Content not found' }));
+      return;
+    }
+
+    const stream = await contentStore.getStream(hash);
+    if (!stream) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Content file not found' }));
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': meta.content_type || 'application/octet-stream',
+      'Content-Length': String(meta.content_size || 0),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=86400'
+    });
+
+    stream.pipe(res);
+  }
+
+  private getEmbeddedHTML(): string {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>

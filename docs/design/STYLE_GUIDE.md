@@ -145,5 +145,5 @@ Wrap every page content in the standard `<PageTransition>` component.
 *   **TITLES:** ALWAYS UPPERCASE.
     *   ✅ `LIBRARY`
     *   ❌ `Library`
-    *   ✅ `DASHBOARD`
+    *   ✅ `$402`
     *   ❌ `Dashboard`

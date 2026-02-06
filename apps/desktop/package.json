@@ -55,6 +55,10 @@
       {
         "from": "../../packages/core/src/db/schema.sql",
         "to": "db/schema.sql"
+      },
+      {
+        "from": "../../packages/core/demo-content",
+        "to": "demo-content"
       }
     ],
     "mac": {

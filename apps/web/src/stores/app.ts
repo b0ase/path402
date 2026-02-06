@@ -65,7 +65,7 @@ export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       // Theme
-      activeTab: 'dashboard',
+      activeTab: 'home',
       setActiveTab: (tab) => set({ activeTab: tab }),
       theme: 'dark',
       setTheme: (theme) => set({ theme }),

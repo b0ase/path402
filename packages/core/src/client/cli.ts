@@ -128,8 +128,8 @@ OPTIONS:
   --ai-key <key>            AI API key (or use ANTHROPIC_API_KEY env var)
   --ai-model <model>        AI model (default: claude-sonnet-4-20250514)
 
-  -g, --gui                 Enable web GUI dashboard (default: enabled)
-  --no-gui                  Disable web GUI dashboard
+  -g, --gui                 Enable web GUI (default: enabled)
+  --no-gui                  Disable web GUI
   --gui-port <port>         GUI port (default: 4021)
 
   -h, --help                Show this help

@@ -525,6 +525,70 @@ export function hasSeenMessage(messageHash: string): boolean {
   return !!row;
 }
 
+// ── Content Cache Operations ──────────────────────────────────────
+
+export interface ContentCacheRow {
+  id: number;
+  token_id: string;
+  content_hash: string;
+  content_type: string | null;
+  content_size: number | null;
+  content_path: string | null;
+  acquired_at: number;
+  price_paid_sats: number | null;
+}
+
+export function upsertContentCache(entry: {
+  token_id: string;
+  content_hash: string;
+  content_type?: string;
+  content_size?: number;
+  content_path?: string;
+  price_paid_sats?: number;
+}): void {
+  getDb().prepare(`
+    INSERT INTO content_cache (token_id, content_hash, content_type, content_size, content_path, price_paid_sats)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(token_id) DO UPDATE SET
+      content_hash = excluded.content_hash,
+      content_type = excluded.content_type,
+      content_size = excluded.content_size,
+      content_path = excluded.content_path,
+      price_paid_sats = excluded.price_paid_sats
+  `).run(
+    entry.token_id,
+    entry.content_hash,
+    entry.content_type ?? null,
+    entry.content_size ?? null,
+    entry.content_path ?? null,
+    entry.price_paid_sats ?? null
+  );
+}
+
+export function getContentByHash(hash: string): ContentCacheRow | null {
+  return getDb().prepare('SELECT * FROM content_cache WHERE content_hash = ?').get(hash) as ContentCacheRow | null;
+}
+
+export function getContentByToken(tokenId: string): ContentCacheRow | null {
+  return getDb().prepare('SELECT * FROM content_cache WHERE token_id = ?').get(tokenId) as ContentCacheRow | null;
+}
+
+export function getAllCachedContent(): ContentCacheRow[] {
+  return getDb().prepare('SELECT * FROM content_cache ORDER BY acquired_at DESC').all() as ContentCacheRow[];
+}
+
+export function deleteContentCache(hash: string): void {
+  getDb().prepare('DELETE FROM content_cache WHERE content_hash = ?').run(hash);
+}
+
+export function getContentCacheStats(): { totalItems: number; totalBytes: number } {
+  const row = getDb().prepare(`
+    SELECT COUNT(*) as totalItems, COALESCE(SUM(content_size), 0) as totalBytes
+    FROM content_cache
+  `).get() as { totalItems: number; totalBytes: number };
+  return row;
+}
+
 // ── Speculation Opportunities ──────────────────────────────────────
 
 export function getSpeculationOpportunities(): Array<{

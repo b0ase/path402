@@ -203,6 +203,37 @@ export function useToggleAutoAcquire() {
   });
 }
 
+// Content hooks
+export interface ContentItem {
+  id: number;
+  token_id: string;
+  content_hash: string;
+  content_type: string | null;
+  content_size: number | null;
+  content_path: string | null;
+  acquired_at: number;
+  price_paid_sats: number | null;
+}
+
+export interface ContentStats {
+  totalItems: number;
+  totalBytes: number;
+}
+
+export function useContent() {
+  return useQuery({
+    queryKey: ['content'],
+    queryFn: () => fetchAPI<ContentItem[]>('/api/content')
+  });
+}
+
+export function useContentStats() {
+  return useQuery({
+    queryKey: ['content-stats'],
+    queryFn: () => fetchAPI<ContentStats>('/api/content/stats')
+  });
+}
+
 export function useSendMessage() {
   const queryClient = useQueryClient();
 

@@ -24,12 +24,15 @@ import {
   createRequestToken,
   createTokenData,
   createTransferEvent,
+  createMessage,
   hashMessage,
   AnnounceTokenPayload,
   RequestTokenPayload,
   TokenDataPayload,
   TransferEventPayload,
   HolderUpdatePayload,
+  ContentRequestPayload,
+  ContentOfferPayload,
   TicketStampPayload,
   createTicketStamp,
   ChatPayload,
@@ -61,7 +64,8 @@ const TOPICS = {
   TOKENS: '$402/tokens/v1',
   TRANSFERS: '$402/transfers/v1',
   STAMPS: '$402/stamps/v1',
-  CHAT: '$402/chat/v1'
+  CHAT: '$402/chat/v1',
+  CONTENT: '$402/content/v1'
 };
 
 // ── Gossip Node ────────────────────────────────────────────────────
@@ -140,6 +144,7 @@ export class GossipNode extends EventEmitter {
       await lp2p.services.pubsub.subscribe(TOPICS.TRANSFERS);
       await lp2p.services.pubsub.subscribe(TOPICS.STAMPS);
       await lp2p.services.pubsub.subscribe(TOPICS.CHAT);
+      await lp2p.services.pubsub.subscribe(TOPICS.CONTENT);
     }
 
     this.started = true;
@@ -226,8 +231,13 @@ export class GossipNode extends EventEmitter {
         this.handleChatMessage(msg.sender_id, msg as GossipMessage<ChatPayload>);
         break;
 
-      // Some messages like REQUEST_TOKEN might still need direct streams or another pubsub topic
-      // For now, we focus on the main gossip topics.
+      case MessageType.CONTENT_REQUEST:
+        this.handleContentRequest(msg.sender_id, msg as GossipMessage<ContentRequestPayload>);
+        break;
+
+      case MessageType.CONTENT_OFFER:
+        this.handleContentOffer(msg.sender_id, msg as GossipMessage<ContentOfferPayload>);
+        break;
     }
   }
 
@@ -283,6 +293,18 @@ export class GossipNode extends EventEmitter {
     this.emit('chat:received', chat);
   }
 
+  private handleContentRequest(peerId: string, msg: GossipMessage<ContentRequestPayload>): void {
+    const request = msg.payload;
+    console.log(`[GossipNode] Content request for ${request.token_id} from ${peerId}`);
+    this.emit('content:requested', request, peerId);
+  }
+
+  private handleContentOffer(peerId: string, msg: GossipMessage<ContentOfferPayload>): void {
+    const offer = msg.payload;
+    console.log(`[GossipNode] Content offer for ${offer.token_id} (${offer.content_size} bytes) from ${peerId}`);
+    this.emit('content:offered', offer, peerId);
+  }
+
   // ── Public API ─────────────────────────────────────────────────
 
   private async publish(topic: string, msg: GossipMessage): Promise<void> {
@@ -334,6 +356,32 @@ export class GossipNode extends EventEmitter {
     const msg = createChatMessage(this.nodeId, chat);
     this.publish(TOPICS.CHAT, msg);
     console.log(`[GossipNode] Broadcast chat message via GossipSub`);
+  }
+
+  requestContent(tokenId: string, requesterAddress: string): void {
+    const msg = createMessage<ContentRequestPayload>(
+      MessageType.CONTENT_REQUEST,
+      this.nodeId,
+      { token_id: tokenId, requester_address: requesterAddress }
+    );
+    this.publish(TOPICS.CONTENT, msg);
+    console.log(`[GossipNode] Requested content for ${tokenId} via GossipSub`);
+  }
+
+  offerContent(tokenId: string, contentHash: string, contentSize: number, priceSats: number, serverAddress: string): void {
+    const msg = createMessage<ContentOfferPayload>(
+      MessageType.CONTENT_OFFER,
+      this.nodeId,
+      {
+        token_id: tokenId,
+        content_hash: contentHash,
+        content_size: contentSize,
+        price_sats: priceSats,
+        server_address: serverAddress
+      }
+    );
+    this.publish(TOPICS.CONTENT, msg);
+    console.log(`[GossipNode] Offered content for ${tokenId} via GossipSub`);
   }
 
   async connectToPeer(addr: string): Promise<void> {

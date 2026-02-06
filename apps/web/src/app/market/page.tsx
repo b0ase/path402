@@ -24,14 +24,14 @@ const SAMPLE_SATIRE_TOKENS: FNewsToken[] = [
     video: '/videos/demo.mp4'
   },
   {
-    token_id: '402_CARLSEN',
-    name: 'FUCKER CARLSEN',
+    token_id: '402_CARLSBERG',
+    name: 'FUCKER CARLSBERG',
     description: 'CONFUSION GRIPS THE NATION. WHY IS THE GREEN M&M NO LONGER SEXY? JUST ASKING QUESTIONS. THE WOKE MOB DOESN\'T WANT YOU TO KNOW.',
     base_price_sats: 69,
     pricing_model: 'fixed',
     current_supply: 1,
     image: '/fucker_carlsberg.png',
-    video: '/videos/demo.mp4'
+    video: '/videos/fucker_carlsberg.mp4'
   },
   {
     token_id: '402_HOENS',
@@ -72,6 +72,16 @@ const SAMPLE_SATIRE_TOKENS: FNewsToken[] = [
     current_supply: 21,
     image: '/michael_fayloor.png?v=3',
     video: '/videos/demo.mp4'
+  },
+  {
+    token_id: '402_KWEG',
+    name: 'THE ADVENTURES OF KWEG WONG ESQ.',
+    description: 'He\'s always trying to pretend to be Satoshi, and going to conferences to give lectures on "scientific" papers he just made up.',
+    base_price_sats: 21,
+    pricing_model: 'fixed',
+    current_supply: 1,
+    image: '/kweg_adventures.png',
+    video: '/videos/kweg-wong-2.mp4'
   }
 ];
 

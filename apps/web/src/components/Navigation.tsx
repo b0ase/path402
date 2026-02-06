@@ -6,7 +6,7 @@ import { WalletButton } from '@/components/WalletButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 const navItems = [
-  { href: '/', label: 'DASHBOARD' },
+  { href: '/', label: '$402' },
   { href: '/portfolio/', label: 'PORTFOLIO' },
   { href: '/market/', label: 'MARKET' },
   { href: '/exchange/', label: 'EXCHANGE' },

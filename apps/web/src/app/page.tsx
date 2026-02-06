@@ -49,7 +49,7 @@ function SystemRow({ level, label, value, detail }: { level: StatusLevel; label:
 
 // ── Main Page ────────────────────────────────────────────────────
 
-export default function DashboardPage() {
+export default function HomePage() {
   const { data: status, isError: statusError, isFetching: statusFetching } = useStatus();
   const { data: portfolio } = usePortfolio();
   const { data: peers } = usePeers();

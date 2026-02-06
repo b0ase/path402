@@ -291,7 +291,7 @@ function updateTrayMenu(status?: { peers: number; tokens: number; pnl: number })
     },
     { type: 'separator' },
     {
-      label: 'Open Dashboard',
+      label: 'Open $402',
       click: () => {
         mainWindow?.show();
         if (process.platform === 'darwin') {
@@ -485,6 +485,28 @@ function setupIPC(): void {
     bsv.importKey(wif);
     const address = await bsv.getAddress();
     return { address };
+  });
+
+  // ── Content IPC Handlers ─────────────────────────────────────
+
+  ipcMain.handle('get-content-list', async () => {
+    try {
+      const store = agent?.getContentStore?.();
+      if (!store) return [];
+      return store.list();
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('get-content-stats', async () => {
+    try {
+      const store = agent?.getContentStore?.();
+      if (!store) return { totalItems: 0, totalBytes: 0, availableBytes: 0 };
+      return store.getStats();
+    } catch {
+      return { totalItems: 0, totalBytes: 0, availableBytes: 0 };
+    }
   });
 }
 
