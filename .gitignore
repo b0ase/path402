@@ -18,7 +18,9 @@ npm-debug.log*
 
 # Environment
 .env
+.env.*
 .env.local
+.env.sign*
 
 # IDE
 .idea/
