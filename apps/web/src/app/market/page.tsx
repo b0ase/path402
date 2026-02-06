@@ -64,13 +64,13 @@ const SAMPLE_SATIRE_TOKENS: FNewsToken[] = [
     video: '/videos/demo.mp4'
   },
   {
-    token_id: '402_FAYLOR',
-    name: 'MICHAEL FAYLOR',
+    token_id: '402_FAYLOOR',
+    name: 'MICHAEL FAYLOOR',
     description: 'THERE IS NO SECOND BEST. SELL YOUR HOUSE, SELL YOUR KIDNEY, BUY THE DIP. CYBER-HORNETS ARE COMING TO PROTECT YOUR ENERGY.',
     base_price_sats: 21000,
     pricing_model: 'fixed',
     current_supply: 21,
-    image: '/micahel_faylor.png?v=3',
+    image: '/michael_fayloor.png?v=3',
     video: '/videos/demo.mp4'
   }
 ];
@@ -109,7 +109,7 @@ function FNewsCard({ token }: { token: FNewsToken }) {
     if (!vid) return;
     vid.currentTime = 0;
     vid.muted = !isUnlocked;
-    vid.play().catch(() => {});
+    vid.play().catch(() => { });
   }, [isUnlocked]);
 
   const handleUnlock = useCallback(() => {
@@ -123,7 +123,7 @@ function FNewsCard({ token }: { token: FNewsToken }) {
       if (vid) {
         vid.muted = false;
         vid.currentTime = 0;
-        vid.play().catch(() => {});
+        vid.play().catch(() => { });
         setIsPlaying(true);
       }
     }, 2000);
@@ -136,7 +136,7 @@ function FNewsCard({ token }: { token: FNewsToken }) {
     if (vid) {
       vid.muted = false;
       vid.currentTime = 0;
-      vid.play().catch(() => {});
+      vid.play().catch(() => { });
     }
   }, []);
 

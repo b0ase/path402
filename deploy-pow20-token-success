@@ -1,0 +1,24 @@
+b0ase@b0ases-Mac-mini b0ase.com % npx tsx scripts/deploy-402-pow.ts
+🚀 Deploying $402 PoW-20...
+Deployer: 1FB29wzu9PM9RXpGBXkYdBaFHjYkSAnyv2
+Config: {
+  "p": "pow-20",
+  "op": "deploy",
+  "tick": "402",
+  "max": "21000000",
+  "lim": "1000",
+  "diff": "5",
+  "work": "sha256"
+}
+(node:7361) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+Using UTXO: 78c97e5a49bddd4a720f83f09917be2b9907c5619ee9330a032922aead14d5ac pos: 2 value: 6428775
+Broadcasting...
+✅ DEPLOYED: e82de21a4546d4add3a12fbb910f1351d42da9004ef5e7054e03101bf75ed1e6
+
+https://whatsonchain.com/tx/e82de21a4546d4add3a12fbb910f1351d42da9004ef5e7054e03101bf75ed1e6
+
+
+--- NEXT STEPS ---
+The $402 token is now live.
+b0ase@b0ases-Mac-mini b0ase.com % 
