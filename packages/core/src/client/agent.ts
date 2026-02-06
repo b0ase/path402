@@ -86,12 +86,15 @@ export interface AgentStatus {
 
 // ── Autonomous Agent ───────────────────────────────────────────────
 
+import { ProofOfIndexingService } from '../services/mining.js';
+
 export class Path402Agent extends EventEmitter {
   private startTime: number = 0;
   private gossipNode: GossipNode | null = null;
   private speculationEngine: SpeculationEngine | null = null;
   private intelligenceProvider: IntelligenceProvider | null = null;
   private guiServer: GUIServer | null = null;
+  private miningService: ProofOfIndexingService | null = null;
   private config: AgentConfig;
   private running = false;
 
@@ -124,6 +127,13 @@ export class Path402Agent extends EventEmitter {
 
     // Initialize gossip node
     await this.initGossip();
+
+    // Initialize Mining Service
+    const minerAddr = process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS || '1minerAddressPLACEHOLDER';
+    const minerKey = process.env.MINER_PRIVATE_KEY || process.env.TREASURY_PRIVATE_KEY;
+
+    this.miningService = new ProofOfIndexingService(minerAddr, minerKey, this.gossipNode!);
+    console.log(`[Agent] Mining Service initialized for ${minerAddr}`);
 
     // Initialize speculation engine
     this.initSpeculation();

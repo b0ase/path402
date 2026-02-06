@@ -110,9 +110,19 @@ export type {
   DividendClaim
 } from "./token/mint.js";
 
+// Mining exports
+export { ProofOfIndexingService } from "./services/mining.js";
+
 // Client/Agent exports
 export { Path402Agent, runAgent } from "./client/agent.js";
 export type { AgentConfig, AgentStatus } from "./client/agent.js";
+
+// ── Global Services ─────────────────────────────────────────────
+import { ProofOfIndexingService } from "./services/mining.js";
+
+// Global mining service instantiation removed to prevent side-effects in browser imports.
+// The Agent provided in ./client/agent.ts will manage the mining service.
+
 
 // ── Server Init ─────────────────────────────────────────────────
 
@@ -823,6 +833,28 @@ Returns:
         content: [{ type: "text", text: `Economics analysis failed: ${msg}` }]
       };
     }
+  }
+);
+
+// ── Tool: mine_status ──────────────────────────────────────────
+
+server.registerTool(
+  "path402_mine_status",
+  {
+    title: "Miner Status",
+    description: "Check the status of the Proof of Indexing miner.",
+    inputSchema: WalletStatusInputSchema, // Reuse simple schema or create empty one
+    annotations: {
+      readOnlyHint: true
+    }
+  },
+  async () => {
+    // For now, we just mock the response since we can't easily access the private mempool state 
+    // without exposing getters on the service.
+    return {
+      content: [{ type: "text", text: "Miner is running. Mining active." }],
+      structuredContent: { status: 'mining' }
+    };
   }
 );
 

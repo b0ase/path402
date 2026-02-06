@@ -1,0 +1,20 @@
+{
+    "name": "@path402/indexer",
+    "version": "0.1.0",
+    "description": "Proof-of-Work Indexer for Path402",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "start": "ts-node src/index.ts",
+        "mine": "ts-node src/index.ts"
+    },
+    "dependencies": {
+        "crypto": "^1.0.1"
+    },
+    "devDependencies": {
+        "ts-node": "^10.9.1",
+        "typescript": "^5.0.0",
+        "@types/node": "^20.0.0"
+    }
+}
