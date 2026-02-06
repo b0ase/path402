@@ -8,7 +8,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="no-drag w-8 h-8 flex items-center justify-center text-zinc-400 dark:text-zinc-600 hover:text-zinc-900 dark:hover:text-white transition-colors"
+      className="px-4 h-full flex items-center justify-center text-zinc-400 dark:text-zinc-600 hover:text-black dark:hover:text-white transition-colors border-l border-zinc-200 dark:border-zinc-800"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
     >
       {theme === 'dark' ? (

@@ -1,6 +1,6 @@
 {
   "name": "@path402/desktop",
-  "version": "0.0.3",
+  "version": "4.0.0-alpha.1",
   "private": true,
   "description": "Path402 Desktop Client - Electron wrapper",
   "author": "b0ase <b0ase@path402.com>",
@@ -114,7 +114,7 @@
     "publish": {
       "provider": "github",
       "owner": "b0ase",
-      "repo": "path402-mcp-server"
+      "repo": "path402"
     }
   }
 }

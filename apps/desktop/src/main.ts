@@ -412,6 +412,80 @@ function setupIPC(): void {
   ipcMain.handle('get-api-url', () => {
     return `http://localhost:${API_PORT}`;
   });
+
+  // ── Wallet IPC Handlers ─────────────────────────────────────
+
+  ipcMain.handle('connect-wallet', async (_, provider: string, opts?: any) => {
+    const { getWalletManager } = require('@path402/core');
+    const manager = getWalletManager();
+
+    switch (provider) {
+      case 'metanet': {
+        manager.useMetanet();
+        await manager.connectAll();
+        const addresses = await manager.getAddresses();
+        return { address: addresses['bsv'] || '', label: 'Metanet' };
+      }
+      case 'handcash': {
+        // V1: store handle as address, real OAuth in v2
+        const handle = opts?.handle || '';
+        return { address: `$${handle}`, label: handle };
+      }
+      case 'yours': {
+        // V1: address passed from renderer extension detection
+        const address = opts?.address || '';
+        return { address, label: 'Yours' };
+      }
+      case 'manual': {
+        const bsvWallet = manager.getBSV();
+        if (opts?.wif) {
+          bsvWallet.importKey(opts.wif);
+        }
+        const address = await bsvWallet.getAddress();
+        return { address, label: 'Manual Key' };
+      }
+      default:
+        throw new Error(`Unknown provider: ${provider}`);
+    }
+  });
+
+  ipcMain.handle('disconnect-wallet', async () => {
+    // Wallet manager doesn't have a disconnect-all, but we can reset state
+    // The renderer handles clearing its own persisted state
+    return;
+  });
+
+  ipcMain.handle('get-wallet-balance', async () => {
+    try {
+      const { getWalletManager } = require('@path402/core');
+      const manager = getWalletManager();
+      const bsv = manager.getBSV();
+      const balance = await bsv.getBalance();
+      return Number(balance.native.amount);
+    } catch {
+      return 0;
+    }
+  });
+
+  ipcMain.handle('get-wallet-address', async () => {
+    try {
+      const { getWalletManager } = require('@path402/core');
+      const manager = getWalletManager();
+      const addresses = await manager.getAddresses();
+      return addresses['bsv'] || '';
+    } catch {
+      return '';
+    }
+  });
+
+  ipcMain.handle('import-wallet-key', async (_, wif: string) => {
+    const { getWalletManager } = require('@path402/core');
+    const manager = getWalletManager();
+    const bsv = manager.getBSV();
+    bsv.importKey(wif);
+    const address = await bsv.getAddress();
+    return { address };
+  });
 }
 
 // ── Error Handling ──────────────────────────────────────────────────

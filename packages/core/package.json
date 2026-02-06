@@ -1,6 +1,6 @@
 {
   "name": "@path402/core",
-  "version": "0.0.3",
+  "version": "4.0.0-alpha.1",
   "description": "Core business logic for path402 - wallet, gossip, token minting, database",
   "type": "module",
   "main": "dist/index.js",

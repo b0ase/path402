@@ -177,8 +177,12 @@ export type VerifyHolderInput = z.infer<typeof VerifyHolderInputSchema>;
 // ── connect_wallet ─────────────────────────────────────────────
 
 export const ConnectWalletInputSchema = z.object({
-  provider: z.enum(["metanet"])
-    .describe("Wallet provider to connect to (currently only 'metanet' supported)")
+  provider: z.enum(["metanet", "handcash", "yours", "manual"])
+    .describe("Wallet provider to connect to: 'metanet' (Babbage SDK), 'handcash' (handle/paymail), 'yours' (Yours/Panda extension), 'manual' (WIF key import)"),
+  handle: z.string().optional()
+    .describe("HandCash handle or paymail (required for 'handcash' provider)"),
+  wif: z.string().optional()
+    .describe("WIF private key (required for 'manual' provider)")
 }).strict();
 
 export type ConnectWalletInput = z.infer<typeof ConnectWalletInputSchema>;

@@ -9,11 +9,12 @@ interface PageHeaderProps {
     extension?: string;
     description: ReactNode;
     icon?: string;
+    customRightElement?: ReactNode;
 }
 
-export function PageHeader({ title, superTitle, extension = '.SYS', description, icon }: PageHeaderProps) {
+export function PageHeader({ title, superTitle, extension = '.SYS', description, icon, customRightElement }: PageHeaderProps) {
     return (
-        <header className="mb-16 border-b border-zinc-200 dark:border-zinc-900 pb-8 flex items-end justify-between overflow-hidden">
+        <header className="mb-8 border-b border-zinc-200 dark:border-zinc-900 pb-6 flex items-end justify-between overflow-hidden relative">
             <div>
                 <motion.div
                     initial={{ opacity: 0, x: -20 }}
@@ -28,7 +29,7 @@ export function PageHeader({ title, superTitle, extension = '.SYS', description,
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    className="text-4xl md:text-6xl font-black tracking-tighter mb-2"
+                    className="text-4xl md:text-6xl font-black tracking-tighter mb-2 font-display"
                 >
                     {title}<span className="text-zinc-300 dark:text-zinc-800">{extension}</span>
                 </motion.h1>
@@ -43,7 +44,11 @@ export function PageHeader({ title, superTitle, extension = '.SYS', description,
                 </motion.div>
             </div>
 
-            {icon && (
+            {customRightElement ? (
+                <div className="hidden md:block">
+                    {customRightElement}
+                </div>
+            ) : icon && (
                 <motion.div
                     initial={{ opacity: 0, scale: 0.8, rotate: -10 }}
                     animate={{ opacity: 0.1, scale: 1, rotate: 0 }} // Final opacity is low as intended

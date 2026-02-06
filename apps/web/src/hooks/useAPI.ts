@@ -25,6 +25,7 @@ export interface Token {
   base_price_sats: number;
   pricing_model: string;
   current_supply: number;
+  image?: string;
 }
 
 export interface Holding {
@@ -105,7 +106,9 @@ export function useStatus() {
   return useQuery({
     queryKey: ['status'],
     queryFn: () => fetchAPI<AgentStatus>('/api/status'),
-    refetchInterval: 5000 // Poll every 5s
+    refetchInterval: 5000, // Poll every 5s
+    retry: 2,
+    retryDelay: 3000
   });
 }
 

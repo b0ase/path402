@@ -19,7 +19,8 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'sans-serif'],
-        mono: ['var(--font-jetbrains-mono)', 'JetBrains Mono', 'Fira Code', 'monospace']
+        mono: ['var(--font-jetbrains-mono)', 'JetBrains Mono', 'Fira Code', 'monospace'],
+        display: ['var(--font-orbitron)', 'Orbitron', 'sans-serif']
       }
     }
   },

@@ -25,6 +25,23 @@ contextBridge.exposeInMainWorld('path402', {
     ipcRenderer.on('agent-ready', (_, status) => callback(status));
   },
 
+  // ── Wallet IPC ──────────────────────────────────────────────
+
+  connectWallet: (provider: string, opts?: any) =>
+    ipcRenderer.invoke('connect-wallet', provider, opts),
+
+  disconnectWallet: () =>
+    ipcRenderer.invoke('disconnect-wallet'),
+
+  getWalletBalance: () =>
+    ipcRenderer.invoke('get-wallet-balance'),
+
+  getWalletAddress: () =>
+    ipcRenderer.invoke('get-wallet-address'),
+
+  importWalletKey: (wif: string) =>
+    ipcRenderer.invoke('import-wallet-key', wif),
+
   // Platform info
   platform: process.platform,
   version: process.env.npm_package_version || '1.0.0',
@@ -40,6 +57,12 @@ declare global {
       setAutoAcquire: (enabled: boolean) => Promise<void>;
       getApiUrl: () => Promise<string>;
       onAgentReady: (callback: (status: any) => void) => void;
+      // Wallet
+      connectWallet: (provider: string, opts?: any) => Promise<{ address: string; label?: string }>;
+      disconnectWallet: () => Promise<void>;
+      getWalletBalance: () => Promise<number>;
+      getWalletAddress: () => Promise<string>;
+      importWalletKey: (wif: string) => Promise<{ address: string }>;
       platform: string;
       version: string;
       isElectron: boolean;

@@ -419,16 +419,42 @@ This allows real payments to be made using the user's funds.`,
   async (params: ConnectWalletInput) => {
     try {
       const manager = getWalletManager();
-      if (params.provider === 'metanet') {
-        manager.useMetanet();
+      let address = '';
+
+      switch (params.provider) {
+        case 'metanet': {
+          manager.useMetanet();
+          await manager.connectAll();
+          const addresses = await manager.getAddresses();
+          address = addresses['bsv'] || '';
+          break;
+        }
+        case 'handcash': {
+          // V1: store handle as address, real OAuth in v2
+          const handle = params.handle || '';
+          if (!handle) throw new Error('HandCash handle is required');
+          address = `$${handle.replace(/^[$@]/, '')}`;
+          break;
+        }
+        case 'yours': {
+          // V1: Yours/Panda extension detected by the renderer
+          // Backend just acknowledges the connection
+          address = 'yours-connected';
+          break;
+        }
+        case 'manual': {
+          const wif = params.wif || '';
+          if (!wif) throw new Error('WIF private key is required');
+          const bsv = manager.getBSV();
+          bsv.importKey(wif);
+          address = await bsv.getAddress();
+          break;
+        }
       }
 
-      await manager.connectAll();
-      const addresses = await manager.getAddresses();
-
       return {
-        content: [{ type: "text", text: `Connected to ${params.provider}. Address: ${addresses['bsv'] || 'unknown'}` }],
-        structuredContent: { connected: true, provider: params.provider, address: addresses['bsv'] }
+        content: [{ type: "text", text: `Connected to ${params.provider}. Address: ${address || 'unknown'}` }],
+        structuredContent: { connected: true, provider: params.provider, address }
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
