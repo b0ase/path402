@@ -28,6 +28,16 @@ npm-debug.log*
 *.swp
 *.swo
 
+# Certificates & Signing
+*.pem
+*.p12
+*.pfx
+*.key
+*.cert
+*.csr
+*.jks
+*.keystore
+
 # OS
 .DS_Store
 Thumbs.db
