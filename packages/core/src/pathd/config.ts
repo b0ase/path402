@@ -13,6 +13,7 @@ export interface PathDConfig {
   powEnabled: boolean;
   powThreads: number;
   walletKey?: string;
+  tokenId?: string;
   verbose: boolean;
 }
 
@@ -32,6 +33,7 @@ export class Config implements PathDConfig {
   powEnabled: boolean;
   powThreads: number;
   walletKey?: string;
+  tokenId?: string;
   verbose: boolean;
   configPath: string;
 
@@ -52,6 +54,7 @@ export class Config implements PathDConfig {
     if (process.env.PATHD_DATA_DIR) this.dataDir = process.env.PATHD_DATA_DIR;
     if (process.env.PATHD_BSV_NODE) this.bsvNode = process.env.PATHD_BSV_NODE;
     if (process.env.PATHD_WALLET_KEY) this.walletKey = process.env.PATHD_WALLET_KEY;
+    if (process.env.HTM_TOKEN_ID) this.tokenId = process.env.HTM_TOKEN_ID;
     if (process.env.PATHD_POW_ENABLED) this.powEnabled = process.env.PATHD_POW_ENABLED === 'true';
     if (process.env.PATHD_POW_THREADS) this.powThreads = parseInt(process.env.PATHD_POW_THREADS);
 
@@ -80,6 +83,7 @@ export class Config implements PathDConfig {
         if (fileConfig.powEnabled !== undefined) this.powEnabled = fileConfig.powEnabled;
         if (fileConfig.powThreads) this.powThreads = fileConfig.powThreads;
         if (fileConfig.walletKey) this.walletKey = fileConfig.walletKey;
+        if (fileConfig.tokenId) this.tokenId = fileConfig.tokenId;
       } catch {
         // Invalid config file, use defaults
       }

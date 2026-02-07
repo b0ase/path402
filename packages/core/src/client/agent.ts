@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'events';
 import { join } from 'path';
+import { createRequire } from 'module';
 import { GossipNode, GossipNodeConfig } from '../gossip/node.js';
 import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculation/engine.js';
 import { IntelligenceProvider } from '../intelligence/provider.js';
@@ -55,6 +56,10 @@ export interface AgentConfig {
   speculationBudget?: number;
   speculationStrategy?: SpeculationStrategy | string;
 
+  // Mining / HTM
+  tokenId?: string;
+  walletKey?: string;
+
   // GUI
   guiEnabled?: boolean;
   guiPort?: number;
@@ -90,11 +95,18 @@ export interface AgentStatus {
     items: number;
     totalBytes: number;
   };
+  mining: {
+    enabled: boolean;
+    broadcasterConnected: boolean;
+    tokenId?: string;
+    minerAddress?: string;
+  };
 }
 
 // ── Autonomous Agent ───────────────────────────────────────────────
 
 import { ProofOfIndexingService } from '../services/mining.js';
+import type { MintBroadcaster } from '../mining/broadcaster.js';
 
 export class Path402Agent extends EventEmitter {
   private startTime: number = 0;
@@ -131,18 +143,49 @@ export class Path402Agent extends EventEmitter {
     const nodeId = getNodeId();
     console.log(`[Agent] Node ID: ${nodeId.slice(0, 16)}...`);
 
-    // Initialize intelligence provider
-    this.initIntelligence();
+    // Initialize intelligence provider (optional — only needed for speculation)
+    const hasAiKey = !!(this.config.aiApiKey || process.env.ANTHROPIC_API_KEY);
+    if (hasAiKey) {
+      this.initIntelligence();
+    } else {
+      console.log('[Agent] No AI API key — speculation disabled, mining-only mode');
+    }
 
     // Initialize gossip node
     await this.initGossip();
 
     // Initialize Mining Service
-    const minerAddr = process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS || '1minerAddressPLACEHOLDER';
-    const minerKey = process.env.MINER_PRIVATE_KEY || process.env.TREASURY_PRIVATE_KEY;
+    const walletKey = this.config.walletKey || process.env.PATHD_WALLET_KEY || process.env.MINER_PRIVATE_KEY || process.env.TREASURY_PRIVATE_KEY;
+    const tokenId = this.config.tokenId || process.env.HTM_TOKEN_ID;
 
-    this.miningService = new ProofOfIndexingService(minerAddr, minerKey, this.gossipNode!);
-    console.log(`[Agent] Mining Service initialized for ${minerAddr}`);
+    // Derive miner address from wallet key, or fall back to env/placeholder
+    let minerAddr = process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS || '';
+    let broadcaster: MintBroadcaster | undefined;
+
+    // Try to create HTM broadcaster via dynamic import (isolates scrypt-ts CJS deps)
+    if (tokenId && walletKey) {
+      try {
+        const require = createRequire(import.meta.url);
+        const htm: any = require('@path402/htm');
+        const htmBroadcaster = new htm.HtmBroadcaster(tokenId, walletKey);
+        broadcaster = htmBroadcaster;
+        if (!minerAddr) minerAddr = htmBroadcaster.getMinerAddress();
+        console.log(`[Agent] HTM broadcaster ready (token: ${tokenId.slice(0, 12)}..., miner: ${minerAddr})`);
+      } catch (err) {
+        console.warn('[Agent] @path402/htm not available — mint broadcasting disabled:', (err as Error).message);
+      }
+    } else if (tokenId && !walletKey) {
+      console.warn('[Agent] HTM_TOKEN_ID set but no wallet key — mint broadcasting disabled');
+    }
+
+    if (!minerAddr) minerAddr = '1minerAddressPLACEHOLDER';
+
+    this.miningService = new ProofOfIndexingService({
+      minerAddress: minerAddr,
+      gossipNode: this.gossipNode!,
+      broadcaster,
+    });
+    console.log(`[Agent] Mining Service initialized for ${minerAddr}${broadcaster ? ' (HTM broadcasting enabled)' : ''}`);
 
     // Initialize speculation engine
     this.initSpeculation();
@@ -240,7 +283,8 @@ export class Path402Agent extends EventEmitter {
 
   private initSpeculation(): void {
     if (!this.intelligenceProvider) {
-      throw new Error('Intelligence provider not initialized');
+      console.log('[Agent] Speculation: skipped (no AI provider)');
+      return;
     }
 
     const strategy = typeof this.config.speculationStrategy === 'string'
@@ -279,6 +323,23 @@ export class Path402Agent extends EventEmitter {
 
       this.gossipNode.on('peer:count', (count) => {
         this.emit('peers:updated', count);
+      });
+    }
+
+    if (this.miningService) {
+      this.miningService.on('block_mined', (block: any) => {
+        console.log(`[Agent] Block mined: ${block.hash.slice(0, 16)}... (${block.items.length} items)`);
+        this.emit('block_mined', block);
+      });
+
+      this.miningService.on('mint_claimed', (data: any) => {
+        console.log(`[Agent] MINT CLAIMED: ${data.txid} (${data.amount} tokens)`);
+        this.emit('mint_claimed', data);
+      });
+
+      this.miningService.on('mint_failed', (data: any) => {
+        console.warn(`[Agent] Mint failed: ${data.error}`);
+        this.emit('mint_failed', data);
       });
     }
 
@@ -343,7 +404,13 @@ export class Path402Agent extends EventEmitter {
       content: (() => {
         const stats = getContentCacheStats();
         return { items: stats.totalItems, totalBytes: stats.totalBytes };
-      })()
+      })(),
+      mining: {
+        enabled: !!this.miningService,
+        broadcasterConnected: !!(this.miningService as any)?.broadcaster,
+        tokenId: this.config.tokenId || process.env.HTM_TOKEN_ID,
+        minerAddress: process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS,
+      }
     };
   }
 
@@ -455,7 +522,21 @@ export class Path402Agent extends EventEmitter {
 
 // ── CLI Entry Point ────────────────────────────────────────────────
 
+import { Config } from '../pathd/config.js';
+
 export async function runAgent(config: AgentConfig = {}): Promise<Path402Agent> {
+  // Load daemon config file (~/.pathd/config.json) and merge wallet/token settings
+  const daemonConfig = new Config();
+  if (!config.walletKey && daemonConfig.walletKey) {
+    config.walletKey = daemonConfig.walletKey;
+  }
+  if (!config.tokenId && daemonConfig.tokenId) {
+    config.tokenId = daemonConfig.tokenId;
+  }
+  if (!config.dataDir) {
+    config.dataDir = daemonConfig.dataDir;
+  }
+
   const agent = new Path402Agent(config);
 
   // Handle shutdown gracefully

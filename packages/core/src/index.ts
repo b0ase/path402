@@ -112,6 +112,11 @@ export type {
 
 // Mining exports
 export { ProofOfIndexingService } from "./services/mining.js";
+export type { MintBroadcaster, MintBroadcasterResult } from "./mining/broadcaster.js";
+
+// DNS Verification exports
+export { verifyDomainDns, generateVerificationCode, resolvePaymentAddress } from "./services/dns.js";
+export type { VerificationResult } from "./services/dns.js";
 
 // Client/Agent exports
 export { Path402Agent, runAgent } from "./client/agent.js";

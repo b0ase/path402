@@ -1,48 +1,50 @@
 
 /**
  * Proof of Indexing Service
- * 
+ *
  * Manages the "Work -> Mine -> Reward" lifecycle for the Path402 daemon.
- * 
+ *
  * Flow:
  * 1. Daemon validates a transaction -> Adds to Mempool
  * 2. Service accumulates items
  * 3. Miner runs in background finding PoW solution
- * 4. Solution found -> Broadcast to network -> Claim $402 Reward
+ * 4. Solution found -> Broadcast via MintBroadcaster -> Claim $402 Reward
  */
 
 import { EventEmitter } from 'events';
-import { IndexerMempool, createBlockTemplate, WorkItem, IndexerBlock } from '../mining/block.js';
+import { IndexerMempool, createBlockTemplate, WorkItem, IndexerBlock, calculateMerkleRoot } from '../mining/block.js';
 import { mineBlock, PoWSolution, BlockHeader } from '../mining/pow.js';
 import { GossipNode } from '../gossip/node.js';
-
-// Robust BSV Import that works in both ESM (Core) and Bundle (Desktop)
-// @ts-ignore
-import * as bsvRaw from 'bsv';
-// @ts-ignore
-const bsv = bsvRaw.default || bsvRaw;
+import type { MintBroadcaster } from '../mining/broadcaster.js';
 
 // Configuration
 const MIN_ITEMS_TO_MINE = 5;
 const INITIAL_DIFFICULTY = 3; // Reduced for testing/responsiveness
+const MINT_MAX_RETRIES = 3;
+const MINT_RETRY_MIN_MS = 2000;
+const MINT_RETRY_MAX_MS = 5000;
 
-// WOC API
-const WOC = 'https://api.whatsonchain.com/v1/bsv/main';
+export interface ProofOfIndexingOptions {
+    minerAddress: string;
+    privateKey?: string;
+    gossipNode?: GossipNode;
+    broadcaster?: MintBroadcaster;
+}
 
 export class ProofOfIndexingService extends EventEmitter {
     private mempool: IndexerMempool;
     private isMining: boolean = false;
     private gossipNode: GossipNode | null = null;
     private minerAddress: string;
-    private privateKey: string | undefined;
+    private broadcaster: MintBroadcaster | null = null;
     private lastBlockHash: string = '0000000000000000000000000000000000000000000000000000000000000000';
 
-    constructor(minerAddress: string, privateKey?: string, gossipNode?: GossipNode) {
+    constructor(options: ProofOfIndexingOptions) {
         super();
         this.mempool = new IndexerMempool();
-        this.minerAddress = minerAddress;
-        this.privateKey = privateKey;
-        this.gossipNode = gossipNode || null;
+        this.minerAddress = options.minerAddress;
+        this.gossipNode = options.gossipNode || null;
+        this.broadcaster = options.broadcaster || null;
 
         // Start Heartbeat to keep chain alive during low activity
         this.startHeartbeat();
@@ -50,6 +52,10 @@ export class ProofOfIndexingService extends EventEmitter {
 
     setGossipNode(node: GossipNode) {
         this.gossipNode = node;
+    }
+
+    setBroadcaster(broadcaster: MintBroadcaster) {
+        this.broadcaster = broadcaster;
     }
 
     /**
@@ -112,15 +118,18 @@ export class ProofOfIndexingService extends EventEmitter {
 
                     console.log(`[PoI] Mining block with ${items.length} items. Difficulty: ${INITIAL_DIFFICULTY}`);
 
-                    // 3. Mine (Chunked to look non-blocking)
-                    const solution = await this.mineAsync(header);
+                    // 3. Mine in chunks (yields to event loop between batches)
+                    let solution: PoWSolution | null = null;
+                    for (let chunk = 0; chunk < 1000; chunk++) {
+                        solution = await this.mineAsync(header);
+                        if (solution) break;
+                    }
 
                     if (solution) {
-                        console.log(`[PoI] 💎 BLOCK FOUND! Hash: ${solution.hash}`);
+                        console.log(`[PoI] BLOCK FOUND! Hash: ${solution.hash}`);
                         await this.handleBlockFound(solution, items);
                     } else {
-                        // giving up or paused
-                        break;
+                        console.log('[PoI] Block not found after max chunks, retrying...');
                     }
                 }
             } catch (err) {
@@ -160,106 +169,53 @@ export class ProofOfIndexingService extends EventEmitter {
 
         this.emit('block_mined', block);
 
-        // 3. Broadcast Mint Transaction (Claim Reward)
-        if (this.privateKey) {
-            try {
-                const txid = await this.broadcastMint(solution);
-                console.log(`[PoI] 💰 MINT CLAIMED: ${txid}`);
-                console.log(`[PoI] View: https://whatsonchain.com/tx/${txid}`);
-            } catch (err) {
-                console.error('[PoI] Failed to claim mint (Check console for details):', err);
-            }
+        // 3. The merkle root IS the BRC-114 work commitment
+        const merkleRoot = solution.header.merkleRoot;
+
+        // 4. Broadcast Mint via HTM contract (with retry for UTXO contention)
+        if (this.broadcaster) {
+            await this.claimMint(merkleRoot);
         } else {
-            console.log('[PoI] No private key set - skipping mint claim.');
+            console.log('[PoI] No broadcaster configured - skipping mint claim.');
         }
 
-        // 4. Gossip
+        // 5. Gossip
         if (this.gossipNode) {
             // this.gossipNode.broadcastBlock(block);
         }
     }
 
-    private async broadcastMint(sol: PoWSolution): Promise<string> {
-        console.log('[PoI] Constructing mint transaction...');
-        const priv = bsv.PrivKey.fromWif(this.privateKey!);
-        const addr = bsv.Address.fromPrivKey(priv);
+    private async claimMint(merkleRoot: string): Promise<void> {
+        for (let attempt = 1; attempt <= MINT_MAX_RETRIES; attempt++) {
+            const result = await this.broadcaster!.broadcastMint(merkleRoot);
 
-        // 1. Get UTXOs
-        const utxoRes = await fetch(`${WOC}/address/${addr.toString()}/unspent`);
-        const utxos = await utxoRes.json();
-        if (!utxos.length) throw new Error('No funds to mint (need gas). Please send BSV to ' + addr.toString());
+            if (result.success) {
+                console.log(`[PoI] MINT CLAIMED: ${result.txid} (${result.amount} tokens)`);
+                this.emit('mint_claimed', {
+                    txid: result.txid,
+                    amount: result.amount,
+                    merkleRoot,
+                });
+                return;
+            }
 
-        const tx = new bsv.Tx();
+            if (result.action === 'stop') {
+                console.log(`[PoI] Mining exhausted: ${result.error}`);
+                this.emit('mint_failed', { error: result.error, merkleRoot });
+                return;
+            }
 
-        // Input (Just use first enough for fee)
-        const utxo = utxos[0];
-        tx.addTxIn(
-            bsv.TxIn.fromProperties(
-                Buffer.from(utxo.tx_hash, 'hex').reverse(),
-                utxo.tx_pos,
-                new bsv.Script(),
-                0xffffffff
-            )
-        );
+            if (result.action === 'retry' && attempt < MINT_MAX_RETRIES) {
+                const delay = MINT_RETRY_MIN_MS + Math.random() * (MINT_RETRY_MAX_MS - MINT_RETRY_MIN_MS);
+                console.log(`[PoI] UTXO contention, retrying in ${Math.round(delay)}ms (${attempt}/${MINT_MAX_RETRIES})`);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+            }
 
-        // Output 1: Inscription (1Sat)
-        // {"p":"pow-20","op":"mint","tick":"402","amt":"1000","nonce":"...","ts":...}
-        const payload = {
-            p: "pow-20",
-            op: "mint",
-            tick: "402",
-            amt: "1000",
-            nonce: sol.header.nonce.toString(),
-            ts: sol.header.timestamp
-        };
-        const json = JSON.stringify(payload);
-
-        // Build Script: OP_FALSE OP_IF "ord" ...
-        const script = new bsv.Script();
-        script.writeOpCode(0x00);
-        script.writeOpCode(0x63);
-        script.writeBuffer(Buffer.from('ord', 'utf8'));
-        script.writeOpCode(0x01);
-        script.writeBuffer(Buffer.from('application/json', 'utf8'));
-        script.writeOpCode(0x00);
-        script.writeBuffer(Buffer.from(json, 'utf8'));
-        script.writeOpCode(0x68);
-
-        const recipient = bsv.Address.fromString(this.minerAddress);
-        const lockScript = recipient.toTxOutScript();
-
-        // Append envelope to locking script (Ordinals style)
-        for (const chunk of script.chunks) {
-            if (chunk.buf) lockScript.writeBuffer(chunk.buf);
-            else if (chunk.opcodenum) lockScript.writeOpCode(chunk.opcodenum);
+            // Final failure
+            console.error(`[PoI] Mint failed after ${attempt} attempts: ${result.error}`);
+            this.emit('mint_failed', { error: result.error, merkleRoot });
+            return;
         }
-
-        tx.addTxOut(new bsv.TxOut(new bsv.Bn(1), lockScript));
-
-        // Change
-        const fee = 300;
-        const change = utxo.value - 1 - fee;
-        if (change > 546) {
-            tx.addTxOut(new bsv.TxOut(new bsv.Bn(change), addr.toTxOutScript()));
-        }
-
-        // Sign
-        // bsv v2 sign() typically handles P2PKH simply if we set privKey
-        tx.sign({
-            privateKey: priv,
-            prevTxId: utxo.tx_hash,
-            outputIndex: utxo.tx_pos,
-            script: addr.toTxOutScript(),
-            satoshis: new bsv.Bn(utxo.value)
-        });
-
-        // Broadcast
-        const res = await fetch(`${WOC}/tx/raw`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ txhex: tx.toHex() })
-        });
-        if (!res.ok) throw new Error(await res.text());
-        return await res.text();
     }
 }

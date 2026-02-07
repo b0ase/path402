@@ -1,15 +1,16 @@
 {
   "name": "@path402/desktop",
-  "version": "4.0.0-alpha.1",
+  "version": "4.0.0-alpha.2",
   "private": true,
   "description": "Path402 Desktop Client - Electron wrapper",
   "author": "b0ase <b0ase@path402.com>",
+  "homepage": "https://path402.com",
   "type": "commonjs",
   "main": "dist/main.js",
   "scripts": {
-    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --format=cjs && cp ../../packages/core/src/db/schema.sql dist/schema.sql",
+    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@path402/htm --format=cjs && cp ../../packages/core/src/db/schema.sql dist/schema.sql",
     "build:electron": "pnpm build",
-    "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --format=cjs --watch",
+    "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@path402/htm --format=cjs --watch",
     "start": "electron dist/main.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -37,7 +38,7 @@
   },
   "build": {
     "appId": "com.path402.client",
-    "productName": "Path402 Client",
+    "productName": "path402",
     "copyright": "Copyright © 2026 b0ase",
     "directories": {
       "output": "release",
@@ -80,7 +81,7 @@
         }
       ],
       "darkModeSupport": true,
-      "identity": null
+      "identity": "Richard Boase (ZQ4NX9NJ89)"
     },
     "win": {
       "target": [
@@ -113,7 +114,9 @@
           ]
         }
       ],
-      "category": "Finance"
+      "category": "Finance",
+      "artifactName": "path402-client-${version}-${arch}.${ext}",
+      "executableName": "path402-client"
     },
     "publish": {
       "provider": "github",

@@ -1,0 +1,20 @@
+{
+  "name": "@path402/htm",
+  "version": "4.0.0-alpha.2",
+  "description": "BRC-114 Hash-to-Mint smart contract integration for path402",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "scrypt-ord": "^1.0.17",
+    "scrypt-ts": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.10",
+    "typescript": "~5.3.3"
+  }
+}
