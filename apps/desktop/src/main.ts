@@ -14,7 +14,8 @@
 
 import { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, Notification } from 'electron';
 import { join, dirname } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { homedir } from 'os';
 import { Path402Agent, AgentConfig } from '@path402/core';
 
 // Set app name explicitly for single instance lock consistency
@@ -70,6 +71,31 @@ function getUIPath(): string {
   return `http://localhost:${API_PORT}`;
 }
 
+// ── Config Helpers ───────────────────────────────────────────────────
+
+function getConfigPath(): string {
+  return join(homedir(), '.pathd', 'config.json');
+}
+
+function readDaemonConfig(): Record<string, any> {
+  const configPath = getConfigPath();
+  if (!existsSync(configPath)) return {};
+  try {
+    return JSON.parse(readFileSync(configPath, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function writeDaemonConfig(config: Record<string, any>): void {
+  const configPath = getConfigPath();
+  const dataDir = dirname(configPath);
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true });
+  }
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+}
+
 // ── Agent Management (Embedded) ─────────────────────────────────────
 
 async function startAgent(): Promise<void> {
@@ -116,6 +142,15 @@ async function startAgent(): Promise<void> {
   console.log('[Electron] Using schema at:', schemaPath);
   if (uiPath) console.log('[Electron] Using static UI at:', uiPath);
 
+  // Load daemon config (~/.pathd/config.json) for wallet/mining/peer settings
+  const daemonConfig = readDaemonConfig();
+  console.log('[Electron] Loaded daemon config:', {
+    walletKeySet: !!daemonConfig.walletKey,
+    tokenId: daemonConfig.tokenId || null,
+    bootstrapPeers: daemonConfig.bootstrapPeers?.length || 0,
+    powEnabled: daemonConfig.powEnabled || false,
+  });
+
   const config: any = {
     gossipPort: GOSSIP_PORT,
     guiEnabled: true,
@@ -123,10 +158,23 @@ async function startAgent(): Promise<void> {
     guiUiPath: uiPath,
     speculationEnabled: false,
     autoAcquire: false,
-    schemaPath // Pass explicitly
+    schemaPath,
+    // From daemon config
+    walletKey: daemonConfig.walletKey,
+    tokenId: daemonConfig.tokenId,
+    dataDir: daemonConfig.dataDir,
+    bootstrapPeers: daemonConfig.bootstrapPeers,
   };
 
   agent = new Path402Agent(config);
+
+  // Listen for restart requests from GUI API
+  agent.on('restart_requested', async () => {
+    console.log('[Electron] Restart requested via GUI');
+    await stopAgent();
+    await startAgent();
+    mainWindow?.webContents.send('agent-ready', agent?.getStatus?.());
+  });
 
   agent.on('ready', (status) => {
     console.log('[Electron] Agent ready');
@@ -507,6 +555,43 @@ function setupIPC(): void {
     } catch {
       return { totalItems: 0, totalBytes: 0, availableBytes: 0 };
     }
+  });
+
+  // ── Config IPC Handlers ─────────────────────────────────────
+
+  ipcMain.handle('get-config', async () => {
+    const config = readDaemonConfig();
+    const walletKey = config.walletKey as string | undefined;
+    return {
+      walletKey: walletKey ? `***${walletKey.slice(-6)}` : undefined,
+      walletKeySet: !!walletKey,
+      tokenId: config.tokenId || null,
+      bootstrapPeers: config.bootstrapPeers || [],
+      powEnabled: config.powEnabled ?? false,
+      powThreads: config.powThreads ?? 4,
+    };
+  });
+
+  ipcMain.handle('set-config', async (_, updates: Record<string, any>) => {
+    const existing = readDaemonConfig();
+    const allowed = ['walletKey', 'tokenId', 'bootstrapPeers', 'powEnabled', 'powThreads'];
+    for (const key of allowed) {
+      if (key in updates) {
+        if (updates[key] === null || updates[key] === '') {
+          delete existing[key];
+        } else {
+          existing[key] = updates[key];
+        }
+      }
+    }
+    writeDaemonConfig(existing);
+    return { success: true, restart_required: true };
+  });
+
+  ipcMain.handle('restart-agent', async () => {
+    await stopAgent();
+    await startAgent();
+    return { success: true };
   });
 }
 

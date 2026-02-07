@@ -249,3 +249,68 @@ export function useSendMessage() {
     }
   });
 }
+
+// ── Config hooks ────────────────────────────────────────────────
+
+export interface NodeConfig {
+  walletKey?: string;
+  walletKeySet: boolean;
+  tokenId?: string | null;
+  bootstrapPeers?: string[];
+  powEnabled?: boolean;
+  powThreads?: number;
+}
+
+export function useConfig() {
+  return useQuery({
+    queryKey: ['config'],
+    queryFn: async (): Promise<NodeConfig> => {
+      if (typeof window !== 'undefined' && (window as any).path402?.getConfig) {
+        return (window as any).path402.getConfig();
+      }
+      const res = await fetch(`${API_BASE}/api/config`);
+      if (!res.ok) throw new Error('Failed to get config');
+      return res.json();
+    }
+  });
+}
+
+export function useUpdateConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: Partial<NodeConfig>) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.setConfig) {
+        return (window as any).path402.setConfig(updates);
+      }
+      const res = await fetch(`${API_BASE}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) throw new Error('Failed to update config');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: ['status'] });
+    }
+  });
+}
+
+export function useRestartAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (typeof window !== 'undefined' && (window as any).path402?.restartAgent) {
+        return (window as any).path402.restartAgent();
+      }
+      const res = await fetch(`${API_BASE}/api/restart`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to restart');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['status'] });
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+    }
+  });
+}

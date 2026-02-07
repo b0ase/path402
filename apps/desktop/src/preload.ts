@@ -42,6 +42,17 @@ contextBridge.exposeInMainWorld('path402', {
   importWalletKey: (wif: string) =>
     ipcRenderer.invoke('import-wallet-key', wif),
 
+  // ── Config IPC ──────────────────────────────────────────────
+
+  getConfig: () =>
+    ipcRenderer.invoke('get-config'),
+
+  setConfig: (updates: Record<string, any>) =>
+    ipcRenderer.invoke('set-config', updates),
+
+  restartAgent: () =>
+    ipcRenderer.invoke('restart-agent'),
+
   // Platform info
   platform: process.platform,
   version: process.env.npm_package_version || '1.0.0',
@@ -63,6 +74,10 @@ declare global {
       getWalletBalance: () => Promise<number>;
       getWalletAddress: () => Promise<string>;
       importWalletKey: (wif: string) => Promise<{ address: string }>;
+      // Config
+      getConfig: () => Promise<any>;
+      setConfig: (updates: Record<string, any>) => Promise<{ success: boolean; restart_required: boolean }>;
+      restartAgent: () => Promise<{ success: boolean }>;
       platform: string;
       version: string;
       isElectron: boolean;

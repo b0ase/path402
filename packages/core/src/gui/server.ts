@@ -6,8 +6,9 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { readFileSync, existsSync, lstatSync } from 'fs';
+import { readFileSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { Path402Agent } from '../client/agent.js';
 import {
@@ -215,6 +216,27 @@ export class GUIServer {
         break;
       }
 
+      case '/api/config':
+        if (req.method === 'GET') {
+          await this.handleConfigGet(res);
+        } else if (req.method === 'POST') {
+          await this.handleConfigSet(req, res);
+        } else {
+          res.writeHead(405);
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+        }
+        break;
+
+      case '/api/restart':
+        if (req.method === 'POST') {
+          this.agent.emit('restart_requested');
+          res.end(JSON.stringify({ success: true, message: 'Restart initiated' }));
+        } else {
+          res.writeHead(405);
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+        }
+        break;
+
       default:
         // Handle parameterized routes
         if (url.startsWith('/api/content/serve/')) {
@@ -226,6 +248,80 @@ export class GUIServer {
         res.writeHead(404);
         res.end(JSON.stringify({ error: 'API endpoint not found' }));
     }
+  }
+
+  private getConfigPath(): string {
+    return join(homedir(), '.pathd', 'config.json');
+  }
+
+  private readConfigFile(): Record<string, unknown> {
+    const configPath = this.getConfigPath();
+    if (!existsSync(configPath)) return {};
+    try {
+      return JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      return {};
+    }
+  }
+
+  private async handleConfigGet(res: ServerResponse): Promise<void> {
+    const config = this.readConfigFile();
+    // Mask walletKey for security — only show last 6 chars
+    const walletKey = config.walletKey as string | undefined;
+    const masked = walletKey ? `***${walletKey.slice(-6)}` : undefined;
+
+    res.end(JSON.stringify({
+      walletKey: masked,
+      walletKeySet: !!walletKey,
+      tokenId: config.tokenId || null,
+      bootstrapPeers: config.bootstrapPeers || [],
+      powEnabled: config.powEnabled ?? false,
+      powThreads: config.powThreads ?? 4,
+    }));
+  }
+
+  private async handleConfigSet(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readBody(req);
+    let updates: Record<string, unknown>;
+    try {
+      updates = JSON.parse(body);
+    } catch {
+      res.writeHead(400);
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+
+    const configPath = this.getConfigPath();
+    const dataDir = dirname(configPath);
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+
+    const existing = this.readConfigFile();
+
+    // Merge allowed fields
+    const allowed = ['walletKey', 'tokenId', 'bootstrapPeers', 'powEnabled', 'powThreads'];
+    for (const key of allowed) {
+      if (key in updates) {
+        if (updates[key] === null || updates[key] === '') {
+          delete existing[key];
+        } else {
+          existing[key] = updates[key];
+        }
+      }
+    }
+
+    writeFileSync(configPath, JSON.stringify(existing, null, 2));
+    res.end(JSON.stringify({ success: true, restart_required: true }));
+  }
+
+  private readBody(req: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let data = '';
+      req.on('data', (chunk) => { data += chunk; });
+      req.on('end', () => resolve(data));
+      req.on('error', reject);
+    });
   }
 
   private async handleContentServe(hash: string, req: IncomingMessage, res: ServerResponse): Promise<void> {

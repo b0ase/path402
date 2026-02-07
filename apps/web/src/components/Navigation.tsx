@@ -15,7 +15,7 @@ const navItems = [
   { href: '/upload/', label: 'ISSUE' },
   { href: '/wallet/', label: 'WALLET' },
   { href: '/chat/', label: 'CHAT' },
-  { href: '/live/', label: 'LIVE' }
+  { href: '/settings/', label: 'SETTINGS' }
 ];
 
 export function Navigation() {

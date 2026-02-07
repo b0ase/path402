@@ -122,6 +122,10 @@ export type { VerificationResult } from "./services/dns.js";
 export { Path402Agent, runAgent } from "./client/agent.js";
 export type { AgentConfig, AgentStatus } from "./client/agent.js";
 
+// Config exports
+export { Config } from "./pathd/config.js";
+export type { PathDConfig } from "./pathd/config.js";
+
 // ── Global Services ─────────────────────────────────────────────
 import { ProofOfIndexingService } from "./services/mining.js";
 

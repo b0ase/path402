@@ -14,6 +14,7 @@ export interface PathDConfig {
   powThreads: number;
   walletKey?: string;
   tokenId?: string;
+  bootstrapPeers?: string[];
   verbose: boolean;
 }
 
@@ -34,6 +35,7 @@ export class Config implements PathDConfig {
   powThreads: number;
   walletKey?: string;
   tokenId?: string;
+  bootstrapPeers?: string[];
   verbose: boolean;
   configPath: string;
 
@@ -84,6 +86,7 @@ export class Config implements PathDConfig {
         if (fileConfig.powThreads) this.powThreads = fileConfig.powThreads;
         if (fileConfig.walletKey) this.walletKey = fileConfig.walletKey;
         if (fileConfig.tokenId) this.tokenId = fileConfig.tokenId;
+        if (Array.isArray(fileConfig.bootstrapPeers)) this.bootstrapPeers = fileConfig.bootstrapPeers;
       } catch {
         // Invalid config file, use defaults
       }
@@ -97,12 +100,15 @@ export class Config implements PathDConfig {
   }
 
   save(): void {
-    const config = {
+    const config: Record<string, unknown> = {
       port: this.port,
       bsvNode: this.bsvNode,
       powEnabled: this.powEnabled,
       powThreads: this.powThreads,
     };
+    if (this.walletKey) config.walletKey = this.walletKey;
+    if (this.tokenId) config.tokenId = this.tokenId;
+    if (this.bootstrapPeers?.length) config.bootstrapPeers = this.bootstrapPeers;
     writeFileSync(this.configPath, JSON.stringify(config, null, 2));
   }
 }
