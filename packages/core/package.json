@@ -55,6 +55,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@babbage/sdk": "^0.4.48",
+    "@bsv/auth-express-middleware": "^2.0.2",
+    "@bsv/payment-express-middleware": "^2.0.0",
+    "@bsv/sdk": "^2.0.1",
     "@libp2p/bootstrap": "^10.0.0",
     "@libp2p/gossipsub": "^15.0.12",
     "@libp2p/identify": "^4.0.10",

@@ -287,6 +287,51 @@ CREATE TABLE IF NOT EXISTS config (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- ══════════════════════════════════════════════════════════════════
+-- IDENTITY TOKENS - User's self-issued Digital DNA token
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS identity_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL UNIQUE,           -- e.g., "$RICHARD"
+  token_id TEXT NOT NULL UNIQUE,         -- deterministic SHA256(path402:symbol:address)
+  issuer_address TEXT NOT NULL,          -- BSV address derived from walletKey
+  total_supply TEXT NOT NULL DEFAULT '100000000000000000', -- 1B * 10^8 (8 decimals, stored as integer string)
+  decimals INTEGER NOT NULL DEFAULT 8,
+  access_rate INTEGER NOT NULL DEFAULT 1, -- tokens per second
+  inscription_data TEXT,                 -- full BSV21 JSON (ready for broadcast)
+  broadcast_txid TEXT,                   -- NULL until actually on-chain
+  broadcast_status TEXT NOT NULL DEFAULT 'local', -- local | pending | confirmed | failed
+  metadata TEXT,                         -- JSON: name, description, avatar
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- ══════════════════════════════════════════════════════════════════
+-- CALL RECORDS - P2P video call accounting
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS call_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  call_id TEXT NOT NULL UNIQUE,
+  caller_peer_id TEXT NOT NULL,
+  callee_peer_id TEXT NOT NULL,
+  caller_token_symbol TEXT,              -- caller's identity token
+  callee_token_symbol TEXT,              -- callee's identity token
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  duration_seconds INTEGER,
+  caller_tokens_sent TEXT DEFAULT '0',   -- tokens of $CALLER sent to callee
+  callee_tokens_sent TEXT DEFAULT '0',   -- tokens of $CALLEE sent to caller
+  settlement_status TEXT NOT NULL DEFAULT 'pending', -- pending | settled | disputed
+  settlement_txid TEXT,                  -- on-chain call record (when broadcast works)
+  settlement_data TEXT,                  -- JSON: full settlement inscription
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_call_records_caller ON call_records(caller_peer_id);
+CREATE INDEX IF NOT EXISTS idx_call_records_callee ON call_records(callee_peer_id);
+CREATE INDEX IF NOT EXISTS idx_call_records_status ON call_records(settlement_status);
+
 -- Default config
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('node_id', lower(hex(randomblob(16)))),

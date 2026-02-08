@@ -3,13 +3,16 @@
  *
  * Serves the $402 web GUI for the Path402 client.
  * Shows node status, portfolio, peers, and speculation controls.
+ *
+ * Uses Express with optional BRC-105 (HTTP 402) payment middleware
+ * for content monetization when walletKey is configured.
  */
 
-import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { readFileSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'fs';
+import type { Server } from 'http';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
-import { fileURLToPath } from 'url';
+import express, { Request, Response, NextFunction } from 'express';
 import { Path402Agent } from '../client/agent.js';
 import {
   getAllTokens,
@@ -19,27 +22,211 @@ import {
   getSpeculationOpportunities,
   getAllCachedContent,
   getContentCacheStats,
-  getContentByHash
+  getContentByHash,
+  logServe
 } from '../db/index.js';
 
-const _dirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+// BRC-105 imports — used conditionally when walletKey is present
+let createAuthMiddleware: typeof import('@bsv/auth-express-middleware').createAuthMiddleware | null = null;
+let createPaymentMiddleware: typeof import('@bsv/payment-express-middleware').createPaymentMiddleware | null = null;
+let PrivateKey: typeof import('@bsv/sdk').PrivateKey | null = null;
+let ProtoWallet: typeof import('@bsv/sdk').ProtoWallet | null = null;
+
+// Lazy-load BSV deps so the server still starts without them
+async function loadBsvDeps(): Promise<boolean> {
+  try {
+    const sdk = await import('@bsv/sdk');
+    PrivateKey = sdk.PrivateKey;
+    ProtoWallet = sdk.ProtoWallet;
+    const authMw = await import('@bsv/auth-express-middleware');
+    createAuthMiddleware = authMw.createAuthMiddleware;
+    const payMw = await import('@bsv/payment-express-middleware');
+    createPaymentMiddleware = payMw.createPaymentMiddleware;
+    return true;
+  } catch (e) {
+    console.warn('[GUI] BRC-105 deps not available, payment gates disabled:', (e as Error).message);
+    return false;
+  }
+}
 
 export class GUIServer {
   private agent: Path402Agent;
   private port: number;
-  private server: ReturnType<typeof createServer> | null = null;
+  private server: Server | null = null;
   private uiPath: string | null = null;
+  private walletKey: string | undefined;
 
-  constructor(agent: Path402Agent, port = 4021, uiPath: string | null = null) {
+  constructor(agent: Path402Agent, port = 4021, uiPath: string | null = null, walletKey?: string) {
     this.agent = agent;
     this.port = port;
     this.uiPath = uiPath;
+    this.walletKey = walletKey;
   }
 
-  start(): void {
-    this.server = createServer((req, res) => this.handleRequest(req, res));
+  async start(): Promise<void> {
+    const app = express();
 
-    this.server.listen(this.port, () => {
+    // ── CORS ──────────────────────────────────────────────────────
+    app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers',
+        'Content-Type, x-bsv-auth-version, x-bsv-auth-identity-key, x-bsv-auth-nonce, ' +
+        'x-bsv-auth-your-nonce, x-bsv-auth-signature, x-bsv-auth-certificates, ' +
+        'x-bsv-payment, x-bsv-payment-version, x-bsv-payment-satoshis-required, ' +
+        'x-bsv-payment-derivation-prefix');
+      res.setHeader('Access-Control-Expose-Headers',
+        'x-bsv-auth-version, x-bsv-auth-identity-key, x-bsv-auth-nonce, ' +
+        'x-bsv-auth-your-nonce, x-bsv-auth-signature, x-bsv-auth-certificates, ' +
+        'x-bsv-payment-version, x-bsv-payment-satoshis-required, ' +
+        'x-bsv-payment-derivation-prefix');
+      if (_req.method === 'OPTIONS') {
+        res.sendStatus(204);
+        return;
+      }
+      next();
+    });
+
+    // JSON body parsing
+    app.use(express.json());
+
+    // ── BRC-105 Middleware (only when walletKey is configured) ────
+    if (this.walletKey) {
+      const loaded = await loadBsvDeps();
+      if (loaded && PrivateKey && ProtoWallet && createAuthMiddleware && createPaymentMiddleware) {
+        try {
+          const serverWallet = new ProtoWallet(new PrivateKey(this.walletKey, 'hex'));
+
+          app.use(createAuthMiddleware({
+            wallet: serverWallet as any,
+            allowUnauthenticated: true
+          }));
+
+          app.use(createPaymentMiddleware({
+            wallet: serverWallet as any,
+            calculateRequestPrice: (req: any) => {
+              // Only charge for content serve routes
+              if (req.path.startsWith('/api/content/serve/')) {
+                const hash = req.path.replace('/api/content/serve/', '');
+                const meta = getContentByHash(hash);
+                return meta?.price_paid_sats ?? 100;
+              }
+              return 0; // All other routes are free
+            }
+          }));
+
+          console.log('[GUI] BRC-105 payment gates enabled');
+        } catch (e) {
+          console.error('[GUI] Failed to initialize BRC-105 wallet:', (e as Error).message);
+        }
+      }
+    }
+
+    // ── API Routes ───────────────────────────────────────────────
+
+    app.get('/api/status', (_req: Request, res: Response) => {
+      res.json(this.agent.getStatus());
+    });
+
+    app.get('/api/tokens', (_req: Request, res: Response) => {
+      res.json(getAllTokens());
+    });
+
+    app.get('/api/portfolio', (_req: Request, res: Response) => {
+      res.json(getPortfolio());
+    });
+
+    app.get('/api/peers', (_req: Request, res: Response) => {
+      res.json({
+        active: getActivePeers(),
+        all: getAllPeers()
+      });
+    });
+
+    app.get('/api/opportunities', (_req: Request, res: Response) => {
+      res.json(getSpeculationOpportunities());
+    });
+
+    app.post('/api/speculation/enable', (_req: Request, res: Response) => {
+      this.agent.setSpeculation(true);
+      res.json({ success: true, enabled: true });
+    });
+
+    app.post('/api/speculation/disable', (_req: Request, res: Response) => {
+      this.agent.setSpeculation(false);
+      res.json({ success: true, enabled: false });
+    });
+
+    app.post('/api/auto/enable', (_req: Request, res: Response) => {
+      this.agent.setAutoAcquire(true);
+      res.json({ success: true, autoAcquire: true });
+    });
+
+    app.post('/api/auto/disable', (_req: Request, res: Response) => {
+      this.agent.setAutoAcquire(false);
+      res.json({ success: true, autoAcquire: false });
+    });
+
+    app.get('/api/content', (_req: Request, res: Response) => {
+      res.json(getAllCachedContent());
+    });
+
+    app.get('/api/content/stats', (_req: Request, res: Response) => {
+      res.json(getContentCacheStats());
+    });
+
+    app.get('/api/config', (_req: Request, res: Response) => {
+      this.handleConfigGet(res);
+    });
+
+    app.post('/api/config', (req: Request, res: Response) => {
+      this.handleConfigSet(req, res);
+    });
+
+    app.post('/api/restart', (_req: Request, res: Response) => {
+      this.agent.emit('restart_requested');
+      res.json({ success: true, message: 'Restart initiated' });
+    });
+
+    // Content serve — the paid route
+    app.get('/api/content/serve/:hash', async (req: Request, res: Response) => {
+      const hash = req.params.hash as string;
+      await this.handleContentServe(hash, req, res);
+    });
+
+    // ── Static Files + SPA Fallback ──────────────────────────────
+    if (this.uiPath) {
+      app.use(express.static(this.uiPath, { extensions: ['html'] }));
+
+      // SPA fallback: serve index.html for unmatched routes
+      app.get('*', (req: Request, res: Response) => {
+        // Don't intercept API 404s
+        if (req.path.startsWith('/api/')) {
+          res.status(404).json({ error: 'API endpoint not found' });
+          return;
+        }
+        const indexPath = join(this.uiPath!, 'index.html');
+        if (existsSync(indexPath)) {
+          res.sendFile(indexPath);
+        } else {
+          res.type('html').send(this.getEmbeddedHTML());
+        }
+      });
+    } else {
+      // No static UI — serve embedded HTML at root
+      app.get('/', (_req: Request, res: Response) => {
+        res.type('html').send(this.getEmbeddedHTML());
+      });
+    }
+
+    // ── Error handler ────────────────────────────────────────────
+    app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+      console.error('[GUI] Request error:', err);
+      res.status(500).json({ error: err.message });
+    });
+
+    // ── Start ────────────────────────────────────────────────────
+    this.server = app.listen(this.port, () => {
       console.log(`[GUI] $402 available at \x1b[36mhttp://localhost:${this.port}\x1b[0m`);
       if (this.uiPath) {
         console.log(`[GUI] Serving static UI from: ${this.uiPath}`);
@@ -49,205 +236,6 @@ export class GUIServer {
 
   stop(): void {
     this.server?.close();
-  }
-
-  private getMimeType(filePath: string): string {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    const mimes: Record<string, string> = {
-      'html': 'text/html',
-      'js': 'application/javascript',
-      'css': 'text/css',
-      'json': 'application/json',
-      'png': 'image/png',
-      'jpg': 'image/jpeg',
-      'gif': 'image/gif',
-      'svg': 'image/svg+xml',
-      'ico': 'image/x-icon',
-      'mp4': 'video/mp4',
-      'webm': 'video/webm'
-    };
-    return mimes[ext || ''] || 'text/plain';
-  }
-
-  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = req.url || '/';
-
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
-    try {
-      // API routes
-      if (url.startsWith('/api/')) {
-        await this.handleAPI(url, req, res);
-        return;
-      }
-
-      // Serve static files if UI path is provided
-      if (this.uiPath) {
-        let filePath = join(this.uiPath, url === '/' ? 'index.html' : url);
-
-        // Next.js SPA Routing Support:
-        // 1. Check for exact file
-        // 2. Check for file + .html
-        // 3. Fallback to index.html for client-side routing
-
-        const tryPaths = [
-          filePath,
-          filePath + '.html',
-          join(this.uiPath, url, 'index.html'),
-          join(this.uiPath, 'index.html') // Final SPA fallback
-        ];
-
-        let found = false;
-        for (const p of tryPaths) {
-          if (existsSync(p)) {
-            const stats = lstatSync(p);
-            if (stats.isFile() && !p.includes('..')) {
-              const content = readFileSync(p);
-              res.writeHead(200, { 'Content-Type': this.getMimeType(p) });
-              res.end(content);
-              found = true;
-              break;
-            }
-          }
-        }
-        if (found) return;
-      }
-
-      // Fallback to embedded HTML for index
-      if (url === '/' || url === '/index.html') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(this.getEmbeddedHTML());
-        return;
-      }
-
-      // 404
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
-    } catch (error) {
-      console.error('[GUI] Request error:', error);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: (error as Error).message }));
-    }
-  }
-
-  private async handleAPI(url: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
-    res.setHeader('Content-Type', 'application/json');
-
-    switch (url) {
-      case '/api/status':
-        res.end(JSON.stringify(this.agent.getStatus()));
-        break;
-
-      case '/api/tokens':
-        res.end(JSON.stringify(getAllTokens()));
-        break;
-
-      case '/api/portfolio':
-        res.end(JSON.stringify(getPortfolio()));
-        break;
-
-      case '/api/peers':
-        res.end(JSON.stringify({
-          active: getActivePeers(),
-          all: getAllPeers()
-        }));
-        break;
-
-      case '/api/opportunities':
-        res.end(JSON.stringify(getSpeculationOpportunities()));
-        break;
-
-      case '/api/speculation/enable':
-        if (req.method === 'POST') {
-          this.agent.setSpeculation(true);
-          res.end(JSON.stringify({ success: true, enabled: true }));
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      case '/api/speculation/disable':
-        if (req.method === 'POST') {
-          this.agent.setSpeculation(false);
-          res.end(JSON.stringify({ success: true, enabled: false }));
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      case '/api/auto/enable':
-        if (req.method === 'POST') {
-          this.agent.setAutoAcquire(true);
-          res.end(JSON.stringify({ success: true, autoAcquire: true }));
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      case '/api/auto/disable':
-        if (req.method === 'POST') {
-          this.agent.setAutoAcquire(false);
-          res.end(JSON.stringify({ success: true, autoAcquire: false }));
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      case '/api/content':
-        res.end(JSON.stringify(getAllCachedContent()));
-        break;
-
-      case '/api/content/stats': {
-        const stats = getContentCacheStats();
-        res.end(JSON.stringify(stats));
-        break;
-      }
-
-      case '/api/config':
-        if (req.method === 'GET') {
-          await this.handleConfigGet(res);
-        } else if (req.method === 'POST') {
-          await this.handleConfigSet(req, res);
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      case '/api/restart':
-        if (req.method === 'POST') {
-          this.agent.emit('restart_requested');
-          res.end(JSON.stringify({ success: true, message: 'Restart initiated' }));
-        } else {
-          res.writeHead(405);
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-        }
-        break;
-
-      default:
-        // Handle parameterized routes
-        if (url.startsWith('/api/content/serve/')) {
-          const hash = url.replace('/api/content/serve/', '');
-          await this.handleContentServe(hash, req, res);
-          return;
-        }
-
-        res.writeHead(404);
-        res.end(JSON.stringify({ error: 'API endpoint not found' }));
-    }
   }
 
   private getConfigPath(): string {
@@ -264,30 +252,26 @@ export class GUIServer {
     }
   }
 
-  private async handleConfigGet(res: ServerResponse): Promise<void> {
+  private handleConfigGet(res: Response): void {
     const config = this.readConfigFile();
     // Mask walletKey for security — only show last 6 chars
     const walletKey = config.walletKey as string | undefined;
     const masked = walletKey ? `***${walletKey.slice(-6)}` : undefined;
 
-    res.end(JSON.stringify({
+    res.json({
       walletKey: masked,
       walletKeySet: !!walletKey,
       tokenId: config.tokenId || null,
       bootstrapPeers: config.bootstrapPeers || [],
       powEnabled: config.powEnabled ?? false,
       powThreads: config.powThreads ?? 4,
-    }));
+    });
   }
 
-  private async handleConfigSet(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await this.readBody(req);
-    let updates: Record<string, unknown>;
-    try {
-      updates = JSON.parse(body);
-    } catch {
-      res.writeHead(400);
-      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+  private handleConfigSet(req: Request, res: Response): void {
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+      res.status(400).json({ error: 'Invalid JSON' });
       return;
     }
 
@@ -312,38 +296,38 @@ export class GUIServer {
     }
 
     writeFileSync(configPath, JSON.stringify(existing, null, 2));
-    res.end(JSON.stringify({ success: true, restart_required: true }));
+    res.json({ success: true, restart_required: true });
   }
 
-  private readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let data = '';
-      req.on('data', (chunk) => { data += chunk; });
-      req.on('end', () => resolve(data));
-      req.on('error', reject);
-    });
-  }
-
-  private async handleContentServe(hash: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handleContentServe(hash: string, _req: Request, res: Response): Promise<void> {
     const contentStore = this.agent.getContentStore?.();
     if (!contentStore) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Content store not available' }));
+      res.status(503).json({ error: 'Content store not available' });
       return;
     }
 
     const meta = getContentByHash(hash);
     if (!meta) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Content not found' }));
+      res.status(404).json({ error: 'Content not found' });
       return;
     }
 
     const stream = await contentStore.getStream(hash);
     if (!stream) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Content file not found' }));
+      res.status(404).json({ error: 'Content file not found' });
       return;
+    }
+
+    // Log the serve event
+    try {
+      const authIdentity = (_req as any).auth?.identityKey;
+      logServe({
+        token_id: meta.token_id,
+        requester_address: typeof authIdentity === 'string' && authIdentity !== 'unknown' ? authIdentity : undefined,
+        revenue_sats: meta.price_paid_sats ?? 0,
+      });
+    } catch {
+      // Don't fail the serve if logging fails
     }
 
     res.writeHead(200, {
@@ -439,7 +423,7 @@ export class GUIServer {
       margin-bottom: 15px;
       color: var(--white);
     }
-    
+
     .logo span {
         color: var(--border-light);
     }
@@ -473,7 +457,7 @@ export class GUIServer {
       font-weight: bold;
       border-bottom: 1px solid var(--border-light);
     }
-    
+
     .warning-banner a:hover {
         border-bottom-color: var(--white);
     }
@@ -592,7 +576,7 @@ export class GUIServer {
     }
 
     .list-item:last-child { border-bottom: none; }
-    
+
     .status-dot {
       display: inline-block;
       width: 6px;
@@ -638,9 +622,9 @@ export class GUIServer {
     }
 
     .tab:hover { color: var(--white); }
-    .tab.active { 
-      color: var(--white); 
-      border-bottom-color: var(--white); 
+    .tab.active {
+      color: var(--white);
+      border-bottom-color: var(--white);
     }
 
     .tab-content { display: none; }
@@ -852,7 +836,7 @@ export class GUIServer {
         // Speculation Status
         document.getElementById('strategy').textContent = status.speculation.strategy;
         document.getElementById('budget').textContent = formatSats(status.speculation.budget);
-        
+
         speculationEnabled = status.speculation.enabled;
         autoAcquireEnabled = status.speculation.autoAcquire;
         updateButtons();

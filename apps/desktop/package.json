@@ -1,6 +1,6 @@
 {
   "name": "@path402/desktop",
-  "version": "4.0.0-alpha.2",
+  "version": "4.0.0-alpha.3",
   "private": true,
   "description": "Path402 Desktop Client - Electron wrapper",
   "author": "b0ase <b0ase@path402.com>",
@@ -81,7 +81,8 @@
         }
       ],
       "darkModeSupport": true,
-      "identity": "Richard Boase (ZQ4NX9NJ89)"
+      "identity": "Richard Boase (ZQ4NX9NJ89)",
+      "notarize": true
     },
     "win": {
       "target": [

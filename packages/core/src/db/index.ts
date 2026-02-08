@@ -589,6 +589,150 @@ export function getContentCacheStats(): { totalItems: number; totalBytes: number
   return row;
 }
 
+// ── Serve Log ─────────────────────────────────────────────────────
+
+export function logServe(entry: {
+  token_id: string;
+  requester_address?: string;
+  requester_peer_id?: string;
+  revenue_sats: number;
+  txid?: string;
+}): void {
+  getDb().prepare(`
+    INSERT INTO serve_log (token_id, requester_address, requester_peer_id, revenue_sats, txid)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    entry.token_id,
+    entry.requester_address ?? null,
+    entry.requester_peer_id ?? null,
+    entry.revenue_sats,
+    entry.txid ?? null
+  );
+}
+
+// ── Identity Token Operations ──────────────────────────────────────
+
+export interface IdentityToken {
+  id: number;
+  symbol: string;
+  token_id: string;
+  issuer_address: string;
+  total_supply: string;
+  decimals: number;
+  access_rate: number;
+  inscription_data: string | null;
+  broadcast_txid: string | null;
+  broadcast_status: 'local' | 'pending' | 'confirmed' | 'failed';
+  metadata: string | null;
+  created_at: number;
+}
+
+export function createIdentityToken(
+  symbol: string,
+  tokenId: string,
+  issuerAddress: string,
+  inscriptionData?: string,
+  metadata?: Record<string, unknown>
+): void {
+  getDb().prepare(`
+    INSERT INTO identity_tokens (symbol, token_id, issuer_address, inscription_data, metadata)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    symbol,
+    tokenId,
+    issuerAddress,
+    inscriptionData ?? null,
+    metadata ? JSON.stringify(metadata) : null
+  );
+}
+
+export function getIdentityToken(): IdentityToken | null {
+  return getDb().prepare('SELECT * FROM identity_tokens ORDER BY id ASC LIMIT 1').get() as IdentityToken | null;
+}
+
+export function getIdentityTokenBySymbol(symbol: string): IdentityToken | null {
+  return getDb().prepare('SELECT * FROM identity_tokens WHERE symbol = ?').get(symbol) as IdentityToken | null;
+}
+
+export function updateIdentityBroadcast(tokenId: string, txid: string, status: IdentityToken['broadcast_status']): void {
+  getDb().prepare(`
+    UPDATE identity_tokens SET broadcast_txid = ?, broadcast_status = ? WHERE token_id = ?
+  `).run(txid, status, tokenId);
+}
+
+// ── Call Record Operations ──────────────────────────────────────
+
+export interface CallRecord {
+  id: number;
+  call_id: string;
+  caller_peer_id: string;
+  callee_peer_id: string;
+  caller_token_symbol: string | null;
+  callee_token_symbol: string | null;
+  started_at: number;
+  ended_at: number | null;
+  duration_seconds: number | null;
+  caller_tokens_sent: string;
+  callee_tokens_sent: string;
+  settlement_status: 'pending' | 'settled' | 'disputed';
+  settlement_txid: string | null;
+  settlement_data: string | null;
+  created_at: number;
+}
+
+export function createCallRecord(record: {
+  call_id: string;
+  caller_peer_id: string;
+  callee_peer_id: string;
+  caller_token_symbol?: string;
+  callee_token_symbol?: string;
+  started_at: number;
+}): void {
+  getDb().prepare(`
+    INSERT INTO call_records (call_id, caller_peer_id, callee_peer_id, caller_token_symbol, callee_token_symbol, started_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    record.call_id,
+    record.caller_peer_id,
+    record.callee_peer_id,
+    record.caller_token_symbol ?? null,
+    record.callee_token_symbol ?? null,
+    record.started_at
+  );
+}
+
+export function updateCallRecord(callId: string, updates: {
+  ended_at?: number;
+  duration_seconds?: number;
+  caller_tokens_sent?: string;
+  callee_tokens_sent?: string;
+  settlement_status?: CallRecord['settlement_status'];
+  settlement_txid?: string;
+  settlement_data?: string;
+}): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      sets.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+
+  if (sets.length === 0) return;
+  values.push(callId);
+  getDb().prepare(`UPDATE call_records SET ${sets.join(', ')} WHERE call_id = ?`).run(...values);
+}
+
+export function getCallRecords(limit = 50): CallRecord[] {
+  return getDb().prepare('SELECT * FROM call_records ORDER BY created_at DESC LIMIT ?').all(limit) as CallRecord[];
+}
+
+export function getCallRecord(callId: string): CallRecord | null {
+  return getDb().prepare('SELECT * FROM call_records WHERE call_id = ?').get(callId) as CallRecord | null;
+}
+
 // ── Speculation Opportunities ──────────────────────────────────────
 
 export function getSpeculationOpportunities(): Array<{

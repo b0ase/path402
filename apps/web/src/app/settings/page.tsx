@@ -161,176 +161,186 @@ export default function SettingsPage() {
         {configLoading ? (
           <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Loading config...</div>
         ) : (
-          <div className="space-y-12 max-w-2xl">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-            {/* ── Node Status ──────────────────────────────────────── */}
-            <section>
-              <SectionTitle>NODE STATUS</SectionTitle>
-              <div className="space-y-3">
-                <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
-                  <span className="text-xs text-zinc-500 uppercase tracking-wider">Node ID</span>
-                  <span className="font-mono text-xs">{status?.nodeId ? `${status.nodeId.slice(0, 16)}...` : '—'}</span>
-                </div>
-                <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
-                  <span className="text-xs text-zinc-500 uppercase tracking-wider">Uptime</span>
-                  <span className="font-mono text-xs">
-                    {status?.uptime ? `${Math.floor(status.uptime / 60000)}m` : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
-                  <span className="text-xs text-zinc-500 uppercase tracking-wider">Peers</span>
-                  <span className="font-mono text-xs">{status?.peersConnected ?? 0} connected</span>
-                </div>
-              </div>
-            </section>
+            {/* ── Left Column ──────────────────────────────────────── */}
+            <div className="space-y-8">
 
-            {/* ── Wallet ───────────────────────────────────────────── */}
-            <section>
-              <SectionTitle>WALLET KEY</SectionTitle>
-              <div className="space-y-4">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-xs text-zinc-500 uppercase tracking-wider">Status</span>
-                  <span className={`font-mono text-xs ${config?.walletKeySet ? 'text-green-600 dark:text-green-400' : 'text-zinc-400'}`}>
-                    {config?.walletKeySet ? `SET (${config.walletKey})` : 'NOT SET'}
-                  </span>
-                </div>
-
-                <div>
-                  <FieldLabel>WIF Private Key</FieldLabel>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={walletKey}
-                      onChange={(e) => setWalletKey(e.target.value)}
-                      placeholder="Enter WIF key..."
-                      className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
-                    />
-                    <SaveButton onClick={handleSaveWallet} disabled={!walletKey.trim()} />
+              {/* ── Node Status ──────────────────────────────────────── */}
+              <section>
+                <SectionTitle>NODE STATUS</SectionTitle>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wider">Node ID</span>
+                    <span className="font-mono text-xs">{status?.nodeId ? `${status.nodeId.slice(0, 16)}...` : '—'}</span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wider">Uptime</span>
+                    <span className="font-mono text-xs">
+                      {status?.uptime ? `${Math.floor(status.uptime / 60000)}m` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-2 border-b border-zinc-100 dark:border-zinc-900">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wider">Peers</span>
+                    <span className="font-mono text-xs">{status?.peersConnected ?? 0} connected</span>
                   </div>
                 </div>
+              </section>
 
-                {config?.walletKeySet && (
-                  <button
-                    onClick={handleClearWallet}
-                    className="text-[10px] uppercase tracking-wider text-red-500 hover:text-red-400 transition-colors"
-                  >
-                    [CLEAR WALLET KEY]
-                  </button>
-                )}
-              </div>
-            </section>
+              {/* ── Wallet ───────────────────────────────────────────── */}
+              <section>
+                <SectionTitle>WALLET KEY</SectionTitle>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wider">Status</span>
+                    <span className={`font-mono text-xs ${config?.walletKeySet ? 'text-green-600 dark:text-green-400' : 'text-zinc-400'}`}>
+                      {config?.walletKeySet ? `SET (${config.walletKey})` : 'NOT SET'}
+                    </span>
+                  </div>
 
-            {/* ── Mining ───────────────────────────────────────────── */}
-            <section>
-              <SectionTitle>MINING</SectionTitle>
-              <div className="space-y-4">
-                <div>
-                  <FieldLabel>Token ID</FieldLabel>
-                  <input
-                    type="text"
-                    value={tokenId}
-                    onChange={(e) => setTokenId(e.target.value)}
-                    placeholder="Token ID for mining rewards..."
-                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
-                  />
+                  <div>
+                    <FieldLabel>WIF Private Key</FieldLabel>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={walletKey}
+                        onChange={(e) => setWalletKey(e.target.value)}
+                        placeholder="Enter WIF key..."
+                        className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
+                      />
+                      <SaveButton onClick={handleSaveWallet} disabled={!walletKey.trim()} />
+                    </div>
+                  </div>
+
+                  {config?.walletKeySet && (
+                    <button
+                      onClick={handleClearWallet}
+                      className="text-[10px] uppercase tracking-wider text-red-500 hover:text-red-400 transition-colors"
+                    >
+                      [CLEAR WALLET KEY]
+                    </button>
+                  )}
                 </div>
+              </section>
 
+              {/* ── Restart ──────────────────────────────────────────── */}
+              <section>
+                <SectionTitle>AGENT CONTROL</SectionTitle>
                 <div className="flex items-center justify-between">
-                  <FieldLabel>Proof of Work</FieldLabel>
+                  <div>
+                    <div className="text-xs text-zinc-500 mb-1">Restart the agent to apply configuration changes.</div>
+                    <div className="text-[10px] text-zinc-400 font-mono">
+                      Config file: ~/.pathd/config.json
+                    </div>
+                  </div>
                   <button
-                    onClick={() => setPowEnabled(!powEnabled)}
-                    className={`px-4 py-1.5 text-[10px] uppercase tracking-[0.15em] font-bold border transition-colors ${
-                      powEnabled
-                        ? 'bg-black text-white dark:bg-white dark:text-black border-black dark:border-white'
-                        : 'border-zinc-300 dark:border-zinc-700 text-zinc-500'
-                    }`}
+                    onClick={handleRestart}
+                    disabled={restartAgent.isPending}
+                    className="px-6 py-3 text-[10px] uppercase tracking-[0.15em] font-bold border border-zinc-300 dark:border-zinc-700 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors disabled:opacity-50"
                   >
-                    {powEnabled ? 'ENABLED' : 'DISABLED'}
+                    {restartAgent.isPending ? 'RESTARTING...' : 'RESTART AGENT'}
                   </button>
                 </div>
+              </section>
 
-                <div>
-                  <FieldLabel>POW Threads ({powThreads})</FieldLabel>
-                  <input
-                    type="range"
-                    min={1}
-                    max={16}
-                    value={powThreads}
-                    onChange={(e) => setPowThreads(Number(e.target.value))}
-                    className="w-full accent-zinc-500"
-                  />
-                  <div className="flex justify-between text-[10px] text-zinc-400 mt-1">
-                    <span>1</span>
-                    <span>16</span>
-                  </div>
-                </div>
+            </div>
 
-                <div className="pt-2">
-                  <SaveButton onClick={handleSaveMining} label="SAVE MINING SETTINGS" />
-                </div>
-              </div>
-            </section>
+            {/* ── Right Column ──────────────────────────────────────── */}
+            <div className="space-y-8">
 
-            {/* ── Network ──────────────────────────────────────────── */}
-            <section>
-              <SectionTitle>BOOTSTRAP PEERS</SectionTitle>
-              <div className="space-y-4">
-                <div>
-                  <FieldLabel>Add Peer</FieldLabel>
-                  <div className="flex gap-2">
+              {/* ── Mining ───────────────────────────────────────────── */}
+              <section>
+                <SectionTitle>MINING</SectionTitle>
+                <div className="space-y-4">
+                  <div>
+                    <FieldLabel>Token ID</FieldLabel>
                     <input
                       type="text"
-                      value={newPeer}
-                      onChange={(e) => setNewPeer(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddPeer()}
-                      placeholder="host:port"
-                      className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
+                      value={tokenId}
+                      onChange={(e) => setTokenId(e.target.value)}
+                      placeholder="Token ID for mining rewards..."
+                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
                     />
-                    <SaveButton onClick={handleAddPeer} disabled={!newPeer.trim()} label="ADD" />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <FieldLabel>Proof of Work</FieldLabel>
+                    <button
+                      onClick={() => setPowEnabled(!powEnabled)}
+                      className={`px-4 py-1.5 text-[10px] uppercase tracking-[0.15em] font-bold border transition-colors ${
+                        powEnabled
+                          ? 'bg-black text-white dark:bg-white dark:text-black border-black dark:border-white'
+                          : 'border-zinc-300 dark:border-zinc-700 text-zinc-500'
+                      }`}
+                    >
+                      {powEnabled ? 'ENABLED' : 'DISABLED'}
+                    </button>
+                  </div>
+
+                  <div>
+                    <FieldLabel>POW Threads ({powThreads})</FieldLabel>
+                    <input
+                      type="range"
+                      min={1}
+                      max={16}
+                      value={powThreads}
+                      onChange={(e) => setPowThreads(Number(e.target.value))}
+                      className="w-full accent-zinc-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-400 mt-1">
+                      <span>1</span>
+                      <span>16</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <SaveButton onClick={handleSaveMining} label="SAVE MINING SETTINGS" />
                   </div>
                 </div>
+              </section>
 
-                {peers.length === 0 ? (
-                  <div className="text-xs font-mono text-zinc-400 py-4 text-center border border-dashed border-zinc-200 dark:border-zinc-800">
-                    No bootstrap peers configured
+              {/* ── Network ──────────────────────────────────────────── */}
+              <section>
+                <SectionTitle>BOOTSTRAP PEERS</SectionTitle>
+                <div className="space-y-4">
+                  <div>
+                    <FieldLabel>Add Peer</FieldLabel>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newPeer}
+                        onChange={(e) => setNewPeer(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddPeer()}
+                        placeholder="host:port"
+                        className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-xs focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600"
+                      />
+                      <SaveButton onClick={handleAddPeer} disabled={!newPeer.trim()} label="ADD" />
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-1">
-                    {peers.map((peer) => (
-                      <div key={peer} className="flex items-center justify-between py-2 px-3 border border-zinc-100 dark:border-zinc-900">
-                        <span className="font-mono text-xs">{peer}</span>
-                        <button
-                          onClick={() => handleRemovePeer(peer)}
-                          className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors uppercase tracking-wider"
-                        >
-                          [REMOVE]
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
 
-            {/* ── Restart ──────────────────────────────────────────── */}
-            <section>
-              <SectionTitle>AGENT CONTROL</SectionTitle>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-zinc-500 mb-1">Restart the agent to apply configuration changes.</div>
-                  <div className="text-[10px] text-zinc-400 font-mono">
-                    Config file: ~/.pathd/config.json
-                  </div>
+                  {peers.length === 0 ? (
+                    <div className="text-xs font-mono text-zinc-400 py-4 text-center border border-dashed border-zinc-200 dark:border-zinc-800">
+                      No bootstrap peers configured
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {peers.map((peer) => (
+                        <div key={peer} className="flex items-center justify-between py-2 px-3 border border-zinc-100 dark:border-zinc-900">
+                          <span className="font-mono text-xs">{peer}</span>
+                          <button
+                            onClick={() => handleRemovePeer(peer)}
+                            className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors uppercase tracking-wider"
+                          >
+                            [REMOVE]
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={handleRestart}
-                  disabled={restartAgent.isPending}
-                  className="px-6 py-3 text-[10px] uppercase tracking-[0.15em] font-bold border border-zinc-300 dark:border-zinc-700 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors disabled:opacity-50"
-                >
-                  {restartAgent.isPending ? 'RESTARTING...' : 'RESTART AGENT'}
-                </button>
-              </div>
-            </section>
+              </section>
+
+            </div>
 
           </div>
         )}

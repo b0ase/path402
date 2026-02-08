@@ -22,6 +22,16 @@ declare global {
       getWalletBalance?: () => Promise<number>;
       getWalletAddress?: () => Promise<string>;
       importWalletKey?: (wif: string) => Promise<{ address: string }>;
+      // Call IPC
+      getCallPeers?: () => Promise<Array<{ peerId: string; label: string }>>;
+      sendCallSignal?: (peerId: string, signal: any) => Promise<void>;
+      getCallPeerId?: () => Promise<string | null>;
+      onCallSignal?: (callback: (remotePeer: string, signal: any) => void) => void;
+      removeCallSignalListener?: () => void;
+      // Config IPC
+      getConfig?: () => Promise<any>;
+      setConfig?: (updates: Record<string, any>) => Promise<{ success: boolean; restart_required: boolean }>;
+      restartAgent?: () => Promise<{ success: boolean }>;
     };
     // Browser extension wallets
     ethereum?: {

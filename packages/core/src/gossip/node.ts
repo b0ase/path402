@@ -17,6 +17,7 @@ import { bootstrap } from '@libp2p/bootstrap';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { createEd25519PeerId } from '@libp2p/peer-id-factory';
+import { peerIdFromString } from '@libp2p/peer-id';
 import {
   GossipMessage,
   MessageType,
@@ -37,7 +38,8 @@ import {
   createTicketStamp,
   ChatPayload,
   createChatMessage,
-  GOSSIP_PORT
+  GOSSIP_PORT,
+  CallSignalMessage,
 } from './protocol.js';
 import {
   getNodeId,
@@ -67,6 +69,8 @@ const TOPICS = {
   CHAT: '$402/chat/v1',
   CONTENT: '$402/content/v1'
 };
+
+const CALL_PROTOCOL = '/path402/call/1.0.0';
 
 // ── Gossip Node ────────────────────────────────────────────────────
 
@@ -133,6 +137,7 @@ export class GossipNode extends EventEmitter {
 
     // Setup event handlers
     this.setupLibp2pHandlers();
+    this.setupCallHandler();
 
     // Start node
     await this.libp2p.start();
@@ -303,6 +308,48 @@ export class GossipNode extends EventEmitter {
     const offer = msg.payload;
     console.log(`[GossipNode] Content offer for ${offer.token_id} (${offer.content_size} bytes) from ${peerId}`);
     this.emit('content:offered', offer, peerId);
+  }
+
+  // ── Call Signaling (Direct Streams) ────────────────────────────
+
+  private setupCallHandler(): void {
+    if (!this.libp2p) return;
+
+    this.libp2p.handle(CALL_PROTOCOL, async ({ stream, connection }) => {
+      const remotePeer = connection.remotePeer.toString();
+      try {
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of stream.source) {
+          chunks.push(chunk.subarray());
+        }
+        const data = new TextDecoder().decode(Buffer.concat(chunks));
+        const signal = JSON.parse(data) as CallSignalMessage;
+        console.log(`[GossipNode] Call signal from ${remotePeer}: ${signal.type}`);
+        this.emit('call:signal', remotePeer, signal);
+      } catch (err) {
+        console.error(`[GossipNode] Failed to handle call signal from ${remotePeer}:`, err);
+      }
+    });
+
+    console.log(`[GossipNode] Call protocol handler registered: ${CALL_PROTOCOL}`);
+  }
+
+  async sendCallSignal(peerId: string, signal: CallSignalMessage): Promise<void> {
+    if (!this.libp2p) throw new Error('libp2p not started');
+
+    const pid = peerIdFromString(peerId) as any;
+    const stream = await this.libp2p.dialProtocol(pid, CALL_PROTOCOL);
+    const data = new TextEncoder().encode(JSON.stringify(signal));
+
+    // Write data and close the write side
+    const writer = stream.sink;
+    await writer((async function* () { yield data; })());
+
+    console.log(`[GossipNode] Sent call signal ${signal.type} to ${peerId}`);
+  }
+
+  getLibp2pPeerId(): string | null {
+    return this.libp2p?.peerId.toString() || null;
   }
 
   // ── Public API ─────────────────────────────────────────────────

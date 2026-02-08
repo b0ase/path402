@@ -11,10 +11,12 @@ const navItems = [
   { href: '/market/', label: 'MARKET' },
   { href: '/exchange/', label: 'EXCHANGE' },
   { href: '/library/', label: 'LIBRARY' },
+  { href: '/identity/', label: 'IDENTITY' },
   { href: '/mint/', label: 'MINT' },
   { href: '/upload/', label: 'ISSUE' },
   { href: '/wallet/', label: 'WALLET' },
   { href: '/chat/', label: 'CHAT' },
+  { href: '/call/', label: 'CALL' },
   { href: '/settings/', label: 'SETTINGS' }
 ];
 

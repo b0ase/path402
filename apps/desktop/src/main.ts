@@ -183,6 +183,11 @@ async function startAgent(): Promise<void> {
     mainWindow?.webContents.send('agent-ready', status);
   });
 
+  agent.on('call:signal', (remotePeer: string, signal: any) => {
+    console.log(`[Electron] Forwarding call signal from ${remotePeer}: ${signal.type}`);
+    mainWindow?.webContents.send('call-incoming-signal', remotePeer, signal);
+  });
+
   agent.on('error', (error) => {
     console.error('[Electron] Agent error:', error);
   });
@@ -592,6 +597,45 @@ function setupIPC(): void {
     await stopAgent();
     await startAgent();
     return { success: true };
+  });
+
+  // ── Identity IPC Handlers ─────────────────────────────────
+
+  ipcMain.handle('identity-mint', async (_, symbol: string) => {
+    if (!agent) throw new Error('Agent not running');
+    return agent.mintIdentity(symbol);
+  });
+
+  ipcMain.handle('identity-get', async () => {
+    if (!agent) return null;
+    return agent.getIdentity();
+  });
+
+  ipcMain.handle('identity-get-balance', async () => {
+    if (!agent) return '0';
+    return agent.getIdentityBalance();
+  });
+
+  ipcMain.handle('identity-get-call-records', async (_, limit?: number) => {
+    if (!agent) return [];
+    return agent.getCallRecords(limit);
+  });
+
+  // ── Call IPC Handlers ─────────────────────────────────────
+
+  ipcMain.handle('call-get-peers', async () => {
+    if (!agent) return [];
+    return agent.getCallPeers().map(id => ({ peerId: id, label: id.slice(0, 12) }));
+  });
+
+  ipcMain.handle('call-send-signal', async (_, peerId: string, signal: any) => {
+    if (!agent) throw new Error('Agent not running');
+    await agent.sendCallSignal(peerId, signal);
+  });
+
+  ipcMain.handle('call-get-peer-id', async () => {
+    if (!agent) return null;
+    return agent.getLibp2pPeerId();
   });
 }
 

@@ -53,6 +53,39 @@ contextBridge.exposeInMainWorld('path402', {
   restartAgent: () =>
     ipcRenderer.invoke('restart-agent'),
 
+  // ── Identity IPC ──────────────────────────────────────────
+
+  mintIdentity: (symbol: string) =>
+    ipcRenderer.invoke('identity-mint', symbol),
+
+  getIdentity: () =>
+    ipcRenderer.invoke('identity-get'),
+
+  getIdentityBalance: () =>
+    ipcRenderer.invoke('identity-get-balance'),
+
+  getCallRecords: (limit?: number) =>
+    ipcRenderer.invoke('identity-get-call-records', limit),
+
+  // ── Call IPC ──────────────────────────────────────────────
+
+  getCallPeers: () =>
+    ipcRenderer.invoke('call-get-peers'),
+
+  sendCallSignal: (peerId: string, signal: any) =>
+    ipcRenderer.invoke('call-send-signal', peerId, signal),
+
+  getCallPeerId: () =>
+    ipcRenderer.invoke('call-get-peer-id'),
+
+  onCallSignal: (callback: (remotePeer: string, signal: any) => void) => {
+    ipcRenderer.on('call-incoming-signal', (_, remotePeer, signal) => callback(remotePeer, signal));
+  },
+
+  removeCallSignalListener: () => {
+    ipcRenderer.removeAllListeners('call-incoming-signal');
+  },
+
   // Platform info
   platform: process.platform,
   version: process.env.npm_package_version || '1.0.0',
@@ -78,6 +111,17 @@ declare global {
       getConfig: () => Promise<any>;
       setConfig: (updates: Record<string, any>) => Promise<{ success: boolean; restart_required: boolean }>;
       restartAgent: () => Promise<{ success: boolean }>;
+      // Identity
+      mintIdentity: (symbol: string) => Promise<any>;
+      getIdentity: () => Promise<any>;
+      getIdentityBalance: () => Promise<string>;
+      getCallRecords: (limit?: number) => Promise<any[]>;
+      // Call
+      getCallPeers: () => Promise<Array<{ peerId: string; label: string }>>;
+      sendCallSignal: (peerId: string, signal: any) => Promise<void>;
+      getCallPeerId: () => Promise<string | null>;
+      onCallSignal: (callback: (remotePeer: string, signal: any) => void) => void;
+      removeCallSignalListener: () => void;
       platform: string;
       version: string;
       isElectron: boolean;

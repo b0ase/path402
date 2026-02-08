@@ -122,9 +122,16 @@ export type { VerificationResult } from "./services/dns.js";
 export { Path402Agent, runAgent } from "./client/agent.js";
 export type { AgentConfig, AgentStatus } from "./client/agent.js";
 
+// Call signaling types
+export { CallSignalType } from "./gossip/protocol.js";
+export type { CallSignalMessage, CallOfferPayload, CallAnswerPayload, CallRejectPayload, CallHangupPayload, IceCandidatePayload } from "./gossip/protocol.js";
+
 // Config exports
 export { Config } from "./pathd/config.js";
 export type { PathDConfig } from "./pathd/config.js";
+
+// Identity + Call Record DB types
+export type { IdentityToken, CallRecord } from "./db/index.js";
 
 // ── Global Services ─────────────────────────────────────────────
 import { ProofOfIndexingService } from "./services/mining.js";

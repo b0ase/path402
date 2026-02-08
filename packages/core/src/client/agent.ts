@@ -14,6 +14,7 @@ import { EventEmitter } from 'events';
 import { join } from 'path';
 import { createRequire } from 'module';
 import { GossipNode, GossipNodeConfig } from '../gossip/node.js';
+import type { CallSignalMessage } from '../gossip/protocol.js';
 import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculation/engine.js';
 import { IntelligenceProvider } from '../intelligence/provider.js';
 import { ClaudeIntelligenceProvider } from '../intelligence/claude.js';
@@ -31,8 +32,17 @@ import {
   getPortfolio,
   getPortfolioSummary,
   getActivePeers,
-  getContentCacheStats
+  getContentCacheStats,
+  createIdentityToken,
+  getIdentityToken,
+  getIdentityTokenBySymbol,
+  createCallRecord,
+  updateCallRecord,
+  getCallRecords,
+  getCallRecord
 } from '../db/index.js';
+import type { IdentityToken, CallRecord } from '../db/index.js';
+import { validateSymbol, prepareMint, generateTokenId } from '../token/mint.js';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -209,8 +219,8 @@ export class Path402Agent extends EventEmitter {
 
     // Start GUI if enabled
     if (this.config.guiEnabled !== false) {
-      this.guiServer = new GUIServer(this, this.config.guiPort || 4021, this.config.guiUiPath);
-      this.guiServer.start();
+      this.guiServer = new GUIServer(this, this.config.guiPort || 4021, this.config.guiUiPath, this.config.walletKey);
+      await this.guiServer.start();
     }
 
     this.running = true;
@@ -323,6 +333,10 @@ export class Path402Agent extends EventEmitter {
 
       this.gossipNode.on('peer:count', (count) => {
         this.emit('peers:updated', count);
+      });
+
+      this.gossipNode.on('call:signal', (remotePeer: string, signal: CallSignalMessage) => {
+        this.emit('call:signal', remotePeer, signal);
       });
     }
 
@@ -503,6 +517,150 @@ export class Path402Agent extends EventEmitter {
    */
   getStrategies(): string[] {
     return Object.keys(STRATEGIES);
+  }
+
+  /**
+   * Send a call signal to a specific peer via direct libp2p stream
+   */
+  async sendCallSignal(peerId: string, signal: CallSignalMessage): Promise<void> {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+    await this.gossipNode.sendCallSignal(peerId, signal);
+  }
+
+  /**
+   * Get list of connected libp2p peer IDs
+   */
+  getCallPeers(): string[] {
+    return this.gossipNode?.getConnectedPeers() || [];
+  }
+
+  /**
+   * Get this node's libp2p peer ID
+   */
+  getLibp2pPeerId(): string | null {
+    return this.gossipNode?.getLibp2pPeerId() || null;
+  }
+
+  // ── Identity (Digital DNA) ───────────────────────────────────
+
+  /**
+   * Mint a Digital DNA identity token
+   */
+  mintIdentity(symbol: string): IdentityToken {
+    // Ensure $ prefix
+    const sym = symbol.startsWith('$') ? symbol : `$${symbol}`;
+
+    const validation = validateSymbol(sym);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid symbol');
+    }
+
+    // Check not already minted
+    const existing = getIdentityToken();
+    if (existing) {
+      throw new Error(`Identity already minted: ${existing.symbol}`);
+    }
+
+    // Derive issuer address from walletKey or fall back to node ID
+    const issuerAddress = this.config.walletKey
+      ? this.config.walletKey.slice(0, 34)
+      : getNodeId();
+
+    // Prepare BSV21 inscription
+    const mintResult = prepareMint({
+      symbol: sym,
+      issuerAddress,
+      accessRate: 1,
+      description: `Digital DNA identity token for ${sym.slice(1)}`
+    });
+
+    if (!mintResult.success || !mintResult.tokenId) {
+      throw new Error(mintResult.error || 'Mint preparation failed');
+    }
+
+    const metadata = {
+      name: sym.slice(1),
+      description: `Digital DNA identity token for ${sym.slice(1)}`,
+      protocol: 'path402',
+      version: '1.0.0'
+    };
+
+    // Store in DB
+    createIdentityToken(
+      sym,
+      mintResult.tokenId,
+      issuerAddress,
+      mintResult.inscription,
+      metadata
+    );
+
+    // Update config to point to this identity
+    setConfig('tokenId', mintResult.tokenId);
+
+    const identity = getIdentityToken()!;
+    this.emit('identity:minted', identity);
+    return identity;
+  }
+
+  /**
+   * Get the current identity token
+   */
+  getIdentity(): IdentityToken | null {
+    return getIdentityToken();
+  }
+
+  /**
+   * Get identity balance (v1: returns total supply)
+   */
+  getIdentityBalance(): string {
+    const identity = getIdentityToken();
+    if (!identity) return '0';
+    return identity.total_supply;
+  }
+
+  /**
+   * Record a call settlement
+   */
+  recordCallSettlement(
+    callId: string,
+    callerTokensSent: string,
+    calleeTokensSent: string,
+    duration: number
+  ): CallRecord | null {
+    const record = getCallRecord(callId);
+    if (!record) return null;
+
+    const settlementData = JSON.stringify({
+      p: 'path402',
+      op: 'call_settlement',
+      call_id: callId,
+      caller: record.caller_peer_id,
+      callee: record.callee_peer_id,
+      caller_token: record.caller_token_symbol,
+      callee_token: record.callee_token_symbol,
+      duration_seconds: duration,
+      caller_tokens_sent: callerTokensSent,
+      callee_tokens_sent: calleeTokensSent,
+      settled_at: Math.floor(Date.now() / 1000)
+    });
+
+    updateCallRecord(callId, {
+      ended_at: Math.floor(Date.now() / 1000),
+      duration_seconds: duration,
+      caller_tokens_sent: callerTokensSent,
+      callee_tokens_sent: calleeTokensSent,
+      settlement_status: 'pending',
+      settlement_data: settlementData
+    });
+
+    return getCallRecord(callId);
+  }
+
+  /**
+   * Get recent call records
+   */
+  getCallRecords(limit = 50): CallRecord[] {
+    return getCallRecords(limit);
   }
 
   /**

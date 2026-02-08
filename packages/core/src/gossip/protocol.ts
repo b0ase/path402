@@ -58,6 +58,48 @@ export enum MessageType {
   PONG = 'PONG'
 }
 
+// ── Call Signal Types (Direct Stream, not GossipSub) ─────────────
+
+export enum CallSignalType {
+  CALL_OFFER = 'CALL_OFFER',
+  CALL_ANSWER = 'CALL_ANSWER',
+  CALL_REJECT = 'CALL_REJECT',
+  CALL_HANGUP = 'CALL_HANGUP',
+  ICE_CANDIDATE = 'ICE_CANDIDATE',
+}
+
+export interface CallOfferPayload {
+  call_id: string;
+  caller_node_id: string;
+  sdp: string;
+}
+
+export interface CallAnswerPayload {
+  call_id: string;
+  sdp: string;
+}
+
+export interface CallRejectPayload {
+  call_id: string;
+  reason?: string;
+}
+
+export interface CallHangupPayload {
+  call_id: string;
+}
+
+export interface IceCandidatePayload {
+  call_id: string;
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+}
+
+export interface CallSignalMessage {
+  type: CallSignalType;
+  payload: CallOfferPayload | CallAnswerPayload | CallRejectPayload | CallHangupPayload | IceCandidatePayload;
+}
+
 // ── Message Payloads ───────────────────────────────────────────────
 
 export interface HelloPayload {
