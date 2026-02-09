@@ -120,11 +120,13 @@ export class Path402HTM extends BSV20V2 {
         assert(hashInt < this.target, 'hash does not meet difficulty')
 
         // ── 5. Calculate mint amount with halving ──
+        // Mirrors Bitcoin exactly: 33 halving eras (~132 years at 10 min blocks).
+        // Era 0: full reward. Era 33+: reward = 0, mining complete.
+        // With 8 decimals and lim = 5,000,000,000 (50 coins):
+        //   Era 0: 50, Era 1: 25, Era 2: 12.5, ... Era 32: 1 sat, Era 33: 0
         const era = this.mintCount / this.halvingInterval
         let amount = this.lim
 
-        // Halving: divide by 2 for each completed era.
-        // 8 eras covers >99.6% of supply for typical configurations.
         if (era >= 1n) { amount = amount / 2n }
         if (era >= 2n) { amount = amount / 2n }
         if (era >= 3n) { amount = amount / 2n }
@@ -132,6 +134,31 @@ export class Path402HTM extends BSV20V2 {
         if (era >= 5n) { amount = amount / 2n }
         if (era >= 6n) { amount = amount / 2n }
         if (era >= 7n) { amount = amount / 2n }
+        if (era >= 8n) { amount = amount / 2n }
+        if (era >= 9n) { amount = amount / 2n }
+        if (era >= 10n) { amount = amount / 2n }
+        if (era >= 11n) { amount = amount / 2n }
+        if (era >= 12n) { amount = amount / 2n }
+        if (era >= 13n) { amount = amount / 2n }
+        if (era >= 14n) { amount = amount / 2n }
+        if (era >= 15n) { amount = amount / 2n }
+        if (era >= 16n) { amount = amount / 2n }
+        if (era >= 17n) { amount = amount / 2n }
+        if (era >= 18n) { amount = amount / 2n }
+        if (era >= 19n) { amount = amount / 2n }
+        if (era >= 20n) { amount = amount / 2n }
+        if (era >= 21n) { amount = amount / 2n }
+        if (era >= 22n) { amount = amount / 2n }
+        if (era >= 23n) { amount = amount / 2n }
+        if (era >= 24n) { amount = amount / 2n }
+        if (era >= 25n) { amount = amount / 2n }
+        if (era >= 26n) { amount = amount / 2n }
+        if (era >= 27n) { amount = amount / 2n }
+        if (era >= 28n) { amount = amount / 2n }
+        if (era >= 29n) { amount = amount / 2n }
+        if (era >= 30n) { amount = amount / 2n }
+        if (era >= 31n) { amount = amount / 2n }
+        if (era >= 32n) { amount = amount / 2n }
 
         assert(amount > 0n, 'mining complete: amount is zero')
 
