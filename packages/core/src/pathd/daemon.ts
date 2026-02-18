@@ -279,14 +279,15 @@ export class Daemon {
         identity: 'BRC-103',
         wallet: 'BRC-100'
       },
-      token: {
-        name: 'PATH402',
+      // path402.com Platform Token (NOT $402 HTM PoW20 — that is 21M, BSV-21, mined)
+      platform_token: {
+        name: 'PATH402.com Platform Token',
         ticker: 'PATH402.com',
         treasury_address: stats?.treasuryAddress || '1BrbnQon4uZPSxNwt19ozwtgHPDbgvaeD1',
-        total_supply: stats?.totalSupply || 1_000_000_000,
+        total_supply: stats?.totalSupply || 500_000_000,
         circulating_supply: stats?.circulatingSupply || 0,
         current_price_sats: stats?.currentPriceSats || 500,
-        pricing_model: 'alice_bond',
+        pricing_model: 'sqrt_decay',
         base_price_sats: 500,
       },
       node: {

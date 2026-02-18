@@ -1085,21 +1085,22 @@ Returns:
 server.registerTool(
   "path402_token_stats",
   {
-    title: "$402 Token Stats (Live)",
-    description: `Get REAL token statistics from the $402 database. This queries the live Supabase database to show:
+    title: "Platform Token Stats (Live)",
+    description: `Get REAL statistics for the path402.com PLATFORM token (500M supply, sqrt_decay pricing, sold on the website).
+This is NOT the $402 HTM PoW20 token (21M supply, BSV-21, mined via Proof of Indexing).
+
+Queries the live Supabase database to show:
 - Treasury balance and address
 - Circulating supply and total sold
-- Current price (ascending bonding curve)
+- Current price (sqrt_decay bonding curve)
 - Total revenue collected
 - Number of holders
-
-This is NOT simulated data - it's the actual state of the $402 token on BSV.
 
 Args:
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
-  Live token statistics from the database.`,
+  Live platform token statistics from the database.`,
     inputSchema: TokenStatsInputSchema,
     annotations: {
       readOnlyHint: true,
@@ -1127,7 +1128,7 @@ Returns:
       }
 
       const lines = [
-        "## $402 Token Statistics (LIVE)",
+        "## path402.com Platform Token Statistics (LIVE)",
         "",
         `**Treasury Address:** ${stats.treasuryAddress}`,
         `**Treasury Balance:** ${stats.treasuryBalance.toLocaleString()} tokens`,
@@ -1158,22 +1159,23 @@ Returns:
 server.registerTool(
   "path402_holders",
   {
-    title: "$402 Token Holders (Live)",
-    description: `Get REAL list of token holders from the $402 database. Shows:
-- All addresses/handles holding tokens
+    title: "Platform Token Holders (Live)",
+    description: `Get REAL list of path402.com PLATFORM token holders from Supabase.
+This is NOT $402 HTM PoW20 holders — these are users who purchased platform tokens on the website.
+
+Shows:
+- All addresses/handles holding platform tokens
 - Balance per holder
 - Provider (HandCash/Yours)
 - Staked balance
 - Total purchased and dividends received
-
-This is NOT simulated data - these are actual token holders on BSV.
 
 Args:
   - limit (number): Maximum holders to return (default: 20, max: 100)
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
-  List of actual token holders from the database.`,
+  List of platform token holders from the database.`,
     inputSchema: HoldersInputSchema,
     annotations: {
       readOnlyHint: true,
@@ -1195,7 +1197,7 @@ Returns:
       }
 
       const lines = [
-        "## $402 Token Holders (LIVE)",
+        "## path402.com Platform Token Holders (LIVE)",
         "",
         `**Total Holders:** ${holders.length}`,
         `**Showing:** ${limited.length}`,
@@ -1229,9 +1231,12 @@ Returns:
 server.registerTool(
   "path402_verify",
   {
-    title: "Verify $402 Token Holder (Live)",
-    description: `Verify if an address or handle holds $402 tokens. This queries the live database to check:
-- Whether they hold tokens
+    title: "Verify Platform Token Holder (Live)",
+    description: `Verify if an address or handle holds path402.com platform tokens.
+This checks the website's platform token (500M supply), NOT the $402 HTM PoW20 token.
+
+Queries the live database to check:
+- Whether they hold platform tokens
 - Their exact balance
 - Whether they meet a minimum balance requirement
 

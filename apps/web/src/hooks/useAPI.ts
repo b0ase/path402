@@ -233,12 +233,19 @@ export interface MarketplaceToken {
   access_url: string | null;
 }
 
+/** Stats for the path402.com PLATFORM token (NOT $402 HTM PoW20).
+ *  tokenLabel distinguishes the token type. */
 export interface MarketplaceStats {
   tokenLabel: string;
+  /** x402 facilitator inscription count */
   totalInscriptions: number;
+  /** x402 facilitator fees */
   totalFees: number;
+  /** Platform token current price in sats (sqrt_decay curve) */
   currentPrice: number;
+  /** Platform tokens sold from treasury */
   supplySold: number;
+  /** Platform tokens remaining in treasury (out of 500M) */
   treasuryRemaining: number;
 }
 

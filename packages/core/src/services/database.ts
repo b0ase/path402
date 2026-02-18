@@ -1,7 +1,10 @@
 /**
  * Database Service
  *
- * Connects to Supabase (self-hosted on Hetzner) to read real $402 token data.
+ * Connects to Supabase (self-hosted on Hetzner) to read path402.com PLATFORM token data.
+ * This is the website store token (500M supply, sqrt_decay pricing, sold via path402.com).
+ * NOT the $402 HTM PoW20 token (21M supply, BSV-21, mined via Proof of Indexing).
+ *
  * Used by both pathd daemon and MCP server.
  */
 
@@ -195,7 +198,8 @@ export async function getTokenStats(): Promise<TokenStats | null> {
   if (!treasury) return null;
 
   const holders = await getHolders();
-  const totalSupply = 1_000_000_000; // 1 billion total supply
+  // path402.com Platform Token total supply (NOT $402 HTM — that is 21M, PoW20 mined)
+  const totalSupply = 500_000_000;
   const circulatingSupply = treasury.total_sold;
 
   // Calculate current price
