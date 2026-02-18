@@ -186,3 +186,19 @@ export const ConnectWalletInputSchema = z.object({
 }).strict();
 
 export type ConnectWalletInput = z.infer<typeof ConnectWalletInputSchema>;
+
+// ── x402 Agent Chaining ─────────────────────────────────────────
+
+export const X402InputSchema = z.object({
+  prompt: z.string()
+    .min(1, "Prompt is required")
+    .describe("Natural language prompt for complex agent chaining. Examples: 'Generate an image of a luminous jellyfish', 'Turn this image into a video'"),
+  max_total_budget: z.number()
+    .int()
+    .min(1)
+    .default(50000)
+    .describe("Maximum total budget for the entire chain in satoshis (default: 50000 / ~$0.25)")
+}).strict();
+
+export type X402Input = z.infer<typeof X402InputSchema>;
+

@@ -1,4 +1,4 @@
-# $402 Protocol Specification: Proof-of-Indexing Hash-to-Mint Tokens
+# BRC-114: Proof-of-Indexing Hash-to-Mint Tokens
 
 Richard Boase (richard@b0ase.com)
 
