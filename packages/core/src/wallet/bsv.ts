@@ -4,11 +4,11 @@
  * The primary wallet for $402 protocol.
  * Handles micropayments, BSV-20 tokens, and inscriptions.
  *
- * Why BSV:
- * - Transaction fees: ~0.001 SAT/byte (vs $3+ on ETH)
- * - Micropayments actually work
- * - Inscriptions for on-chain content
- * - BSV-20 for $402 token
+ * Uses bsv v2 (MoneyButton) for all crypto operations:
+ * - PrivKey / PubKey / Address for key management
+ * - TxBuilder for transaction construction + signing
+ * - Ecdsa for message signing/verification
+ * - WhatsOnChain API for balance, UTXOs, and broadcast
  */
 
 import {
@@ -19,21 +19,28 @@ import {
   BSVUtxo,
   BSV20Token
 } from './types.js';
+import bsv from 'bsv';
 
 // ── Constants ──────────────────────────────────────────────────────
 
 const SATS_PER_BSV = 100_000_000;
-const DEFAULT_FEE_RATE = 0.5; // sats per byte (BSV is cheap)
+const DEFAULT_FEE_PER_KB = 500; // sats per KB (~0.5 sat/byte)
 const DUST_LIMIT = 1; // 1 satoshi minimum output
 
 // WhatsOnChain API
 const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/main';
 
+// BSV price cache (avoid hammering CoinGecko)
+let cachedBsvPrice: { price: number; timestamp: number } | null = null;
+const PRICE_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+
 // ── BSV Wallet ─────────────────────────────────────────────────────
 
 export class BSVWallet implements ChainWallet {
   chain = 'bsv' as const;
-  private privateKey: string | null = null;
+  private privKey: any = null;      // bsv.PrivKey
+  private pubKey: any = null;       // bsv.PubKey
+  private bsvAddress: any = null;   // bsv.Address
   private address: string | null = null;
   private connected = false;
 
@@ -49,49 +56,34 @@ export class BSVWallet implements ChainWallet {
    * Generate a new random key pair
    */
   async generateKey(): Promise<{ privateKey: string; address: string }> {
-    // Use Web Crypto for randomness
-    const randomBytes = new Uint8Array(32);
-    crypto.getRandomValues(randomBytes);
-
-    // Convert to WIF format (simplified - in production use proper library)
-    const privateKey = Buffer.from(randomBytes).toString('hex');
-
-    // Derive address (simplified - in production use proper ECDSA)
-    const address = await this.deriveAddress(privateKey);
-
-    this.privateKey = privateKey;
-    this.address = address;
+    this.privKey = bsv.PrivKey.fromRandom();
+    this.pubKey = bsv.PubKey.fromPrivKey(this.privKey);
+    this.bsvAddress = bsv.Address.fromPubKey(this.pubKey);
+    this.address = this.bsvAddress.toString();
     this.connected = true;
 
-    return { privateKey, address };
+    return { privateKey: this.privKey.toWif(), address: this.address! };
   }
 
   /**
-   * Import existing private key
+   * Import existing private key (WIF format)
    */
   importKey(privateKeyWif: string): void {
-    // In production: validate WIF format, extract key
-    this.privateKey = privateKeyWif;
-    // Derive address from key
-    this.address = '1' + privateKeyWif.slice(0, 33); // Placeholder
-    this.connected = true;
-  }
-
-  private async deriveAddress(privateKey: string): Promise<string> {
-    // Simplified - in production use proper ECDSA library (bsv.js)
-    // This creates a deterministic but fake address for demo
-    const hash = await crypto.subtle.digest(
-      'SHA-256',
-      Buffer.from(privateKey, 'hex')
-    );
-    const hashHex = Buffer.from(hash).toString('hex');
-    return '1' + hashHex.slice(0, 33);
+    try {
+      this.privKey = bsv.PrivKey.fromWif(privateKeyWif);
+      this.pubKey = bsv.PubKey.fromPrivKey(this.privKey);
+      this.bsvAddress = bsv.Address.fromPubKey(this.pubKey);
+      this.address = this.bsvAddress.toString();
+      this.connected = true;
+    } catch (err) {
+      throw new Error(`Invalid WIF private key: ${err}`);
+    }
   }
 
   // ── ChainWallet Interface ──────────────────────────────────────
 
   async connect(): Promise<void> {
-    if (!this.privateKey) {
+    if (!this.privKey) {
       await this.generateKey();
     }
     this.connected = true;
@@ -117,7 +109,6 @@ export class BSVWallet implements ChainWallet {
       throw new Error('Wallet not connected');
     }
 
-    // Fetch from WhatsOnChain
     const balance = await this.fetchBalance(this.address);
 
     return {
@@ -129,34 +120,33 @@ export class BSVWallet implements ChainWallet {
         decimals: 8,
         formatted: (balance / SATS_PER_BSV).toFixed(8) + ' BSV'
       }
-      // path402 balance would come from BSV-20 indexer
     };
   }
 
   async sendNative(to: string, amount: bigint): Promise<Transaction> {
-    if (!this.privateKey || !this.address) {
-      throw new Error('Wallet not connected');
+    this.ensureConnected();
+
+    const utxos = await this.fetchUtxos(this.address!);
+    if (utxos.length === 0) {
+      throw new Error('No UTXOs available');
     }
 
-    // 1. Get UTXOs
-    const utxos = await this.fetchUtxos(this.address);
+    const toAddr = bsv.Address.fromString(to);
+    const satoshis = Number(amount);
 
-    // 2. Build transaction
-    const tx = await this.buildTransaction(utxos, to, Number(amount));
+    // Build, sign, and serialize
+    const txHex = this.buildP2PKHTx(utxos, toAddr, satoshis);
 
-    // 3. Sign transaction
-    const signedTx = await this.signTransaction(tx);
-
-    // 4. Broadcast
-    const txid = await this.broadcastTransaction(signedTx);
+    // Broadcast to network
+    const txid = await this.broadcastTransaction(txHex);
 
     return {
       chain: 'bsv',
       txid,
-      from: this.address,
+      from: this.address!,
       to,
       amount,
-      fee: BigInt(tx.fee),
+      fee: BigInt(this.estimateFeeForBytes(txHex.length / 2)),
       status: 'pending',
       confirmations: 0,
       timestamp: Date.now()
@@ -164,27 +154,32 @@ export class BSVWallet implements ChainWallet {
   }
 
   async sendToken(to: string, tokenTick: string, amount: bigint): Promise<Transaction> {
-    // BSV-20 transfer inscription
-    if (!this.privateKey || !this.address) {
-      throw new Error('Wallet not connected');
+    this.ensureConnected();
+
+    const utxos = await this.fetchUtxos(this.address!);
+    if (utxos.length === 0) {
+      throw new Error('No UTXOs available');
     }
 
     // Build BSV-20 transfer inscription
-    const inscription = this.buildBSV20Transfer(tokenTick, amount, to);
+    const transferData = JSON.stringify({
+      p: 'bsv-20',
+      op: 'transfer',
+      tick: tokenTick,
+      amt: amount.toString()
+    });
 
-    // Get UTXOs and build tx
-    const utxos = await this.fetchUtxos(this.address);
-    const tx = await this.buildInscriptionTransaction(utxos, inscription);
-    const signedTx = await this.signTransaction(tx);
-    const txid = await this.broadcastTransaction(signedTx);
+    const toAddr = bsv.Address.fromString(to);
+    const txHex = this.buildInscriptionTx(utxos, toAddr, DUST_LIMIT, transferData);
+    const txid = await this.broadcastTransaction(txHex);
 
     return {
       chain: 'bsv',
       txid,
-      from: this.address,
+      from: this.address!,
       to,
-      amount: BigInt(0), // Native amount is minimal for inscription
-      fee: BigInt(tx.fee),
+      amount: BigInt(0),
+      fee: BigInt(this.estimateFeeForBytes(txHex.length / 2)),
       status: 'pending',
       confirmations: 0,
       timestamp: Date.now(),
@@ -197,12 +192,10 @@ export class BSVWallet implements ChainWallet {
   }
 
   async estimateFee(to: string, amount: bigint): Promise<FeeEstimate> {
-    // BSV transactions are ~250 bytes for simple send
-    // Fee rate is ~0.5 sat/byte
+    // Typical P2PKH tx is ~250 bytes
     const estimatedSize = 250;
-    const fee = Math.ceil(estimatedSize * DEFAULT_FEE_RATE);
+    const fee = Math.ceil(estimatedSize * DEFAULT_FEE_PER_KB / 1000);
 
-    // BSV is so cheap, USD equivalent is negligible
     const bsvPrice = await this.getBsvPriceUsd();
     const feeUsd = (fee / SATS_PER_BSV) * bsvPrice;
 
@@ -210,7 +203,7 @@ export class BSVWallet implements ChainWallet {
       chain: 'bsv',
       fee: BigInt(fee),
       feeUsd,
-      speed: 'fast', // BSV confirms in ~10 min
+      speed: 'fast',
       estimatedSeconds: 600
     };
   }
@@ -255,25 +248,20 @@ export class BSVWallet implements ChainWallet {
   }
 
   async signMessage(message: string): Promise<string> {
-    if (!this.privateKey) {
-      throw new Error('Wallet not connected');
-    }
+    this.ensureConnected();
 
-    // Simplified - in production use proper Bitcoin message signing
-    const msgHash = await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(message)
-    );
-    // This is a placeholder - real implementation would use ECDSA
-    return Buffer.from(msgHash).toString('base64');
+    const hash = bsv.Hash.sha256(Buffer.from(message));
+    const keyPair = (bsv as any).KeyPair.fromPrivKey(this.privKey);
+    const sig = bsv.Ecdsa.sign(hash, keyPair);
+    return sig.toString();
   }
 
-  async verifyMessage(message: string, signature: string, address: string): Promise<boolean> {
-    // Simplified - in production use proper Bitcoin message verification
-    // For now, just verify format
+  async verifyMessage(message: string, signature: string, pubKeyStr: string): Promise<boolean> {
     try {
-      Buffer.from(signature, 'base64');
-      return true;
+      const hash = bsv.Hash.sha256(Buffer.from(message));
+      const sig = bsv.Sig.fromString(signature);
+      const pubKey = bsv.PubKey.fromString(pubKeyStr);
+      return bsv.Ecdsa.verify(hash, sig, pubKey);
     } catch {
       return false;
     }
@@ -282,13 +270,11 @@ export class BSVWallet implements ChainWallet {
   // ── BSV-Specific Methods ───────────────────────────────────────
 
   /**
-   * Get BSV-20 token balances
+   * Get BSV-20 token balances (requires external indexer)
    */
   async getBSV20Balances(): Promise<BSV20Token[]> {
     if (!this.address) return [];
-
-    // Would query BSV-20 indexer (like 1satordinals.com or custom)
-    // For now, return empty
+    // Would query a BSV-20 indexer (1satordinals.com or custom)
     return [];
   }
 
@@ -296,29 +282,31 @@ export class BSVWallet implements ChainWallet {
    * Create a BSV-20 mint inscription
    */
   async mintBSV20(tick: string, amount: bigint): Promise<Transaction> {
-    if (!this.privateKey || !this.address) {
-      throw new Error('Wallet not connected');
-    }
+    this.ensureConnected();
 
-    const inscription = {
+    const mintData = JSON.stringify({
       p: 'bsv-20',
       op: 'mint',
       tick,
       amt: amount.toString()
-    };
+    });
 
-    const utxos = await this.fetchUtxos(this.address);
-    const tx = await this.buildInscriptionTransaction(utxos, JSON.stringify(inscription));
-    const signedTx = await this.signTransaction(tx);
-    const txid = await this.broadcastTransaction(signedTx);
+    const utxos = await this.fetchUtxos(this.address!);
+    if (utxos.length === 0) {
+      throw new Error('No UTXOs available');
+    }
+
+    // Mint inscription goes to self
+    const txHex = this.buildInscriptionTx(utxos, this.bsvAddress, DUST_LIMIT, mintData);
+    const txid = await this.broadcastTransaction(txHex);
 
     return {
       chain: 'bsv',
       txid,
-      from: this.address,
-      to: this.address,
+      from: this.address!,
+      to: this.address!,
       amount: BigInt(0),
-      fee: BigInt(tx.fee),
+      fee: BigInt(this.estimateFeeForBytes(txHex.length / 2)),
       status: 'pending',
       confirmations: 0,
       timestamp: Date.now(),
@@ -327,26 +315,165 @@ export class BSVWallet implements ChainWallet {
   }
 
   /**
-   * Create content inscription (for serving)
+   * Create content inscription (ordinals-style envelope)
    */
   async inscribeContent(content: Buffer, contentType: string): Promise<string> {
-    if (!this.privateKey || !this.address) {
-      throw new Error('Wallet not connected');
+    this.ensureConnected();
+
+    const utxos = await this.fetchUtxos(this.address!);
+    if (utxos.length === 0) {
+      throw new Error('No UTXOs available');
     }
 
-    // Build ordinals-style inscription
-    // ord envelope: OP_FALSE OP_IF "ord" ... content ... OP_ENDIF
-    const envelope = this.buildOrdEnvelope(content, contentType);
+    // Build ordinals envelope: OP_FALSE OP_IF "ord" ... content ... OP_ENDIF
+    const envelopeScript = this.buildOrdEnvelopeScript(content, contentType);
 
-    const utxos = await this.fetchUtxos(this.address);
-    const tx = await this.buildInscriptionTransaction(utxos, envelope);
-    const signedTx = await this.signTransaction(tx);
-    const txid = await this.broadcastTransaction(signedTx);
+    const txHex = this.buildDataScriptTx(utxos, this.bsvAddress, DUST_LIMIT, envelopeScript);
+    const txid = await this.broadcastTransaction(txHex);
 
     return txid;
   }
 
-  // ── Private Helpers ────────────────────────────────────────────
+  /**
+   * Get the public key as a string (for verification by others)
+   */
+  getPublicKeyString(): string {
+    if (!this.pubKey) throw new Error('Wallet not connected');
+    return this.pubKey.toString();
+  }
+
+  // ── Private: Transaction Building ──────────────────────────────
+
+  private ensureConnected(): void {
+    if (!this.privKey || !this.address || !this.bsvAddress) {
+      throw new Error('Wallet not connected');
+    }
+  }
+
+  /**
+   * Build and sign a P2PKH send transaction using TxBuilder.
+   * Adds all UTXOs as inputs, sends `satoshis` to `toAddr`,
+   * remainder goes to change address (self).
+   */
+  private buildP2PKHTx(utxos: BSVUtxo[], toAddr: any, satoshis: number): string {
+    const txb = new (bsv as any).TxBuilder();
+    txb.setFeePerKbNum(DEFAULT_FEE_PER_KB);
+    txb.setChangeAddress(this.bsvAddress);
+
+    // Our locking script (all UTXOs are P2PKH to our address)
+    const lockingScript = (bsv as any).Script.fromPubKeyHash(this.bsvAddress.hashBuf);
+
+    for (const utxo of utxos) {
+      const txHashBuf = Buffer.from(utxo.txid, 'hex').reverse();
+      const txOut = (bsv as any).TxOut.fromProperties(
+        new (bsv as any).Bn(utxo.satoshis),
+        lockingScript
+      );
+      txb.inputFromPubKeyHash(txHashBuf, utxo.vout, txOut);
+    }
+
+    txb.outputToAddress(new (bsv as any).Bn(satoshis), toAddr);
+
+    txb.build({ useAllInputs: true });
+    const keyPair = (bsv as any).KeyPair.fromPrivKey(this.privKey);
+    txb.signWithKeyPairs([keyPair]);
+
+    return txb.tx.toHex();
+  }
+
+  /**
+   * Build and sign a transaction with an OP_RETURN data output.
+   * Used for BSV-20 mint/transfer inscriptions.
+   *
+   * Outputs:
+   *   1. Dust to recipient (P2PKH)
+   *   2. OP_FALSE OP_RETURN <data> (0 sats)
+   *   3. Change to self (P2PKH, auto by TxBuilder)
+   */
+  private buildInscriptionTx(
+    utxos: BSVUtxo[],
+    toAddr: any,
+    dustAmount: number,
+    data: string
+  ): string {
+    const dataScript = new (bsv as any).Script();
+    dataScript.writeOpCode((bsv as any).OpCode.OP_FALSE);
+    dataScript.writeOpCode((bsv as any).OpCode.OP_RETURN);
+    dataScript.writeBuffer(Buffer.from(data));
+
+    return this.buildDataScriptTx(utxos, toAddr, dustAmount, dataScript);
+  }
+
+  /**
+   * Build and sign a transaction with an arbitrary script data output.
+   * Used for content inscriptions (ordinals envelopes) and other data.
+   *
+   * Outputs:
+   *   1. Dust to recipient (P2PKH)
+   *   2. Data script output (0 sats)
+   *   3. Change to self (P2PKH, auto by TxBuilder)
+   */
+  private buildDataScriptTx(
+    utxos: BSVUtxo[],
+    toAddr: any,
+    dustAmount: number,
+    dataScript: any
+  ): string {
+    const txb = new (bsv as any).TxBuilder();
+    txb.setFeePerKbNum(DEFAULT_FEE_PER_KB);
+    txb.setChangeAddress(this.bsvAddress);
+    txb.setDust(0); // Allow 0-sat OP_RETURN outputs
+
+    const lockingScript = (bsv as any).Script.fromPubKeyHash(this.bsvAddress.hashBuf);
+
+    for (const utxo of utxos) {
+      const txHashBuf = Buffer.from(utxo.txid, 'hex').reverse();
+      const txOut = (bsv as any).TxOut.fromProperties(
+        new (bsv as any).Bn(utxo.satoshis),
+        lockingScript
+      );
+      txb.inputFromPubKeyHash(txHashBuf, utxo.vout, txOut);
+    }
+
+    // Dust output to recipient
+    if (dustAmount > 0) {
+      txb.outputToAddress(new (bsv as any).Bn(dustAmount), toAddr);
+    }
+
+    // Data output (0 sats)
+    txb.outputToScript(new (bsv as any).Bn(0), dataScript);
+
+    txb.build({ useAllInputs: true });
+    const keyPair = (bsv as any).KeyPair.fromPrivKey(this.privKey);
+    txb.signWithKeyPairs([keyPair]);
+
+    return txb.tx.toHex();
+  }
+
+  /**
+   * Build ordinals inscription envelope script:
+   *   OP_FALSE OP_IF
+   *     PUSH "ord"
+   *     PUSH 0x01 (content-type tag)
+   *     PUSH <contentType>
+   *     PUSH 0x00 (body tag)
+   *     PUSH <content>
+   *   OP_ENDIF
+   */
+  private buildOrdEnvelopeScript(content: Buffer, contentType: string): any {
+    const script = new (bsv as any).Script();
+    script.writeOpCode((bsv as any).OpCode.OP_FALSE);
+    script.writeOpCode((bsv as any).OpCode.OP_IF);
+    script.writeBuffer(Buffer.from('ord'));
+    script.writeBuffer(Buffer.from([0x01]));
+    script.writeBuffer(Buffer.from(contentType));
+    script.writeBuffer(Buffer.alloc(0)); // 0x00 body tag (empty push = OP_0)
+    script.writeBuffer(content);
+    script.writeOpCode((bsv as any).OpCode.OP_ENDIF);
+    return script;
+  }
+
+  // ── Private: Network ───────────────────────────────────────────
 
   private async fetchBalance(address: string): Promise<number> {
     try {
@@ -364,128 +491,56 @@ export class BSVWallet implements ChainWallet {
       const response = await fetch(`${WOC_BASE}/address/${address}/unspent`);
       if (!response.ok) return [];
       const data = await response.json();
-      return data.map((u: { tx_hash: string; tx_pos: number; value: number; script: string }) => ({
+      return data.map((u: { tx_hash: string; tx_pos: number; value: number }) => ({
         txid: u.tx_hash,
         vout: u.tx_pos,
         satoshis: u.value,
-        script: u.script
+        script: '' // WoC unspent endpoint doesn't return scripts; we derive from address
       }));
     } catch {
       return [];
     }
   }
 
-  private async buildTransaction(
-    utxos: BSVUtxo[],
-    to: string,
-    amount: number
-  ): Promise<{ hex: string; fee: number }> {
-    // Simplified transaction building
-    // In production, use bsv.js or similar library
-
-    // Select UTXOs to cover amount + fee
-    let total = 0;
-    const selected: BSVUtxo[] = [];
-    const fee = 250; // Estimate
-
-    for (const utxo of utxos) {
-      selected.push(utxo);
-      total += utxo.satoshis;
-      if (total >= amount + fee) break;
-    }
-
-    if (total < amount + fee) {
-      throw new Error(`Insufficient funds: have ${total}, need ${amount + fee}`);
-    }
-
-    // This is a placeholder - real implementation would build proper tx
-    return {
-      hex: 'placeholder_tx_hex',
-      fee
-    };
-  }
-
-  private async buildInscriptionTransaction(
-    utxos: BSVUtxo[],
-    data: string | Buffer
-  ): Promise<{ hex: string; fee: number }> {
-    // Inscription transactions are larger due to data
-    const dataSize = typeof data === 'string' ? data.length : data.length;
-    const fee = Math.ceil((250 + dataSize) * DEFAULT_FEE_RATE);
-
-    // Select UTXOs
-    let total = 0;
-    const selected: BSVUtxo[] = [];
-
-    for (const utxo of utxos) {
-      selected.push(utxo);
-      total += utxo.satoshis;
-      if (total >= fee + DUST_LIMIT) break;
-    }
-
-    if (total < fee + DUST_LIMIT) {
-      throw new Error(`Insufficient funds for inscription`);
-    }
-
-    return {
-      hex: 'placeholder_inscription_tx_hex',
-      fee
-    };
-  }
-
-  private buildBSV20Transfer(tick: string, amount: bigint, to: string): string {
-    return JSON.stringify({
-      p: 'bsv-20',
-      op: 'transfer',
-      tick,
-      amt: amount.toString()
+  private async broadcastTransaction(txHex: string): Promise<string> {
+    const response = await fetch(`${WOC_BASE}/tx/raw`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txhex: txHex })
     });
-  }
 
-  private buildOrdEnvelope(content: Buffer, contentType: string): Buffer {
-    // Simplified ordinals envelope
-    // Real implementation would build proper OP_FALSE OP_IF envelope
-    return Buffer.concat([
-      Buffer.from('ord'),
-      Buffer.from([0x01]), // content type tag
-      Buffer.from(contentType),
-      Buffer.from([0x00]), // content tag
-      content
-    ]);
-  }
-
-  private async signTransaction(tx: { hex: string; fee: number }): Promise<string> {
-    // Placeholder - real implementation would sign inputs
-    return tx.hex + '_signed';
-  }
-
-  private async broadcastTransaction(signedTx: string): Promise<string> {
-    try {
-      const response = await fetch(`${WOC_BASE}/tx/raw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txhex: signedTx })
-      });
-
-      if (!response.ok) {
-        throw new Error('Broadcast failed');
-      }
-
-      const txid = await response.text();
-      return txid.replace(/"/g, '');
-    } catch (error) {
-      // For demo, return fake txid
-      return 'demo_' + Date.now().toString(16);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Broadcast failed: ${errorText}`);
     }
+
+    const txid = await response.text();
+    return txid.replace(/"/g, '').trim();
   }
 
   private async getBsvPriceUsd(): Promise<number> {
-    try {
-      // Could use CoinGecko or similar
-      // For now, hardcode approximate price
-      return 50; // ~$50 per BSV
-    } catch {
-      return 50;
+    if (cachedBsvPrice && Date.now() - cachedBsvPrice.timestamp < PRICE_CACHE_MS) {
+      return cachedBsvPrice.price;
     }
+
+    try {
+      const response = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin-cash-sv&vs_currencies=usd'
+      );
+      if (!response.ok) throw new Error('Price fetch failed');
+      const data = await response.json();
+      const price = data['bitcoin-cash-sv']?.usd;
+      if (price && typeof price === 'number') {
+        cachedBsvPrice = { price, timestamp: Date.now() };
+        return price;
+      }
+      throw new Error('Invalid price data');
+    } catch {
+      return cachedBsvPrice?.price || 50;
+    }
+  }
+
+  private estimateFeeForBytes(bytes: number): number {
+    return Math.ceil(bytes * DEFAULT_FEE_PER_KB / 1000);
   }
 }

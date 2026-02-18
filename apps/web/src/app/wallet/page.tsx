@@ -5,6 +5,7 @@ import { PageContainer, PageHeader } from '@/components/PageHeader';
 import { StatusCard } from '@/components/StatusCard';
 import { useWallet } from '@/hooks/useWallet';
 import { useAppStore, CosmeticWallet } from '@/stores/app';
+import { useState, useEffect, useCallback } from 'react';
 
 function truncateAddress(address: string, len = 16): string {
   if (address.length <= len) return address;
@@ -13,8 +14,13 @@ function truncateAddress(address: string, len = 16): string {
 }
 
 function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(text).catch(() => { });
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => { });
   };
 
   return (
@@ -23,7 +29,7 @@ function CopyButton({ text }: { text: string }) {
       className="text-[10px] text-zinc-400 hover:text-black dark:hover:text-white transition-colors uppercase tracking-wider"
       title="Copy to clipboard"
     >
-      [COPY]
+      {copied ? '[COPIED]' : '[COPY]'}
     </button>
   );
 }
@@ -35,6 +41,164 @@ function ProviderBadge({ provider }: { provider: string }) {
     </span>
   );
 }
+
+// ── Node Wallet Section ─────────────────────────────────────────
+
+interface NodeWalletData {
+  address: string;
+  balanceSats: number;
+  balanceBsv: string;
+  funded: boolean;
+  isNew: boolean;
+}
+
+function NodeWalletSection() {
+  const [data, setData] = useState<NodeWalletData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNodeWallet = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/wallet/node');
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to load node wallet');
+      }
+      const json = await res.json();
+      setData(json);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchNodeWallet(); }, [fetchNodeWallet]);
+
+  // Auto-refresh balance every 30s when unfunded
+  useEffect(() => {
+    if (!data || data.funded) return;
+    const interval = setInterval(fetchNodeWallet, 30_000);
+    return () => clearInterval(interval);
+  }, [data, fetchNodeWallet]);
+
+  if (loading) {
+    return (
+      <div className="border border-zinc-200 dark:border-zinc-800 px-6 py-12 text-center">
+        <div className="inline-block w-6 h-6 border-2 border-zinc-200 dark:border-zinc-800 border-t-black dark:border-t-white rounded-full animate-spin mb-4" />
+        <div className="text-zinc-500 text-xs">Initializing node wallet...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="border border-red-200 dark:border-red-900 px-6 py-8 text-center">
+        <div className="text-red-500 text-xs mb-4">{error}</div>
+        <button
+          onClick={fetchNodeWallet}
+          className="px-4 py-2 text-[10px] uppercase tracking-[0.2em] border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data.address)}&bgcolor=ffffff&color=000000`;
+
+  return (
+    <div className="border border-zinc-200 dark:border-zinc-800">
+      {/* Status bar */}
+      <div className={`px-6 py-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold ${data.funded
+        ? 'bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-400 border-b border-green-200 dark:border-green-900'
+        : 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-900'
+        }`}>
+        <span className={`w-2 h-2 rounded-full ${data.funded ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+        {data.funded ? 'Funded & Ready' : 'Awaiting Funding'}
+        {data.isNew && <span className="ml-2 text-zinc-400">(New Key Generated)</span>}
+      </div>
+
+      <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-zinc-200 dark:divide-zinc-800">
+        {/* Left: QR + Address */}
+        <div className="px-6 py-8 flex flex-col items-center gap-4">
+          <div className="bg-white p-3 border border-zinc-200">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrUrl}
+              alt={`QR code for ${data.address}`}
+              width={200}
+              height={200}
+              className="block"
+            />
+          </div>
+
+          <div className="text-center">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">BSV Address</div>
+            <div className="font-mono text-xs break-all max-w-[280px] leading-relaxed">
+              {data.address}
+            </div>
+            <div className="mt-2">
+              <CopyButton text={data.address} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Balance + Instructions */}
+        <div className="px-6 py-8 flex flex-col justify-between">
+          <div>
+            <div className="mb-6">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Balance</div>
+              <div className="text-3xl font-bold font-mono">
+                {data.balanceBsv} <span className="text-sm text-zinc-400">BSV</span>
+              </div>
+              <div className="text-xs text-zinc-500 mt-1">
+                {data.balanceSats.toLocaleString()} satoshis
+              </div>
+            </div>
+
+            {!data.funded && (
+              <div className="border-l-2 border-amber-500 pl-4 py-2 mb-6">
+                <div className="text-xs font-bold text-zinc-900 dark:text-white mb-1">
+                  Fund this address to mint tokens
+                </div>
+                <div className="text-xs text-zinc-500 leading-relaxed">
+                  Scan the QR code with any BSV wallet (HandCash, Yours, RelayX)
+                  and send any amount. Even $0.10 is enough for hundreds of mints.
+                </div>
+              </div>
+            )}
+
+            {data.funded && (
+              <div className="border-l-2 border-green-500 pl-4 py-2 mb-6">
+                <div className="text-xs font-bold text-zinc-900 dark:text-white mb-1">
+                  Ready to mint
+                </div>
+                <div className="text-xs text-zinc-500 leading-relaxed">
+                  Your node wallet is funded. Go to <a href="/mint" className="underline hover:text-black dark:hover:text-white">/mint</a> to
+                  create BSV-21 tokens.
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={fetchNodeWallet}
+            className="w-full py-2 text-[10px] uppercase tracking-[0.2em] border border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:text-black dark:hover:text-white hover:border-black dark:hover:border-white transition-colors"
+          >
+            Refresh Balance
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ───────────────────────────────────────────────────
 
 export default function WalletPage() {
   const {
@@ -75,6 +239,20 @@ export default function WalletPage() {
             </span>
           }
         />
+
+        {/* ── Node Wallet (server-side key) ───────────────────────────── */}
+        <section className="mb-12">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-4 pb-2 border-b border-zinc-200 dark:border-zinc-800">
+            Node Wallet
+          </div>
+          <div className="mb-4 px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border-l-2 border-black dark:border-white">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              Your node&apos;s signing key. Auto-generated on first visit, stored in <code className="text-zinc-900 dark:text-zinc-100">~/.pathd/config.json</code>.
+              Fund it to enable minting and on-chain operations.
+            </p>
+          </div>
+          <NodeWalletSection />
+        </section>
 
         {/* ── Balance Overview ──────────────────────────────────────── */}
         <section className="mb-12">

@@ -72,7 +72,8 @@ export function signStamp(data: string): string {
   if (!privateKey) throw new Error("Identity not initialized");
 
   const hash = bsv.Hash.sha256(Buffer.from(data));
-  const sig = bsv.Ecdsa.sign(hash, privateKey);
+  const keyPair = bsv.KeyPair.fromPrivKey(privateKey);
+  const sig = bsv.Ecdsa.sign(hash, keyPair);
   return sig.toString();
 }
 
