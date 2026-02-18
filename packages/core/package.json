@@ -45,6 +45,11 @@
       "types": "./dist/mcp.d.ts",
       "import": "./dist/mcp.js",
       "require": "./dist/mcp.js"
+    },
+    "./publish": {
+      "types": "./dist/publish/index.d.ts",
+      "import": "./dist/publish/index.js",
+      "require": "./dist/publish/index.js"
     }
   },
   "scripts": {

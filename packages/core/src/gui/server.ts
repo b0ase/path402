@@ -95,7 +95,11 @@ export class GUIServer {
       const loaded = await loadBsvDeps();
       if (loaded && PrivateKey && ProtoWallet && createAuthMiddleware && createPaymentMiddleware) {
         try {
-          const serverWallet = new ProtoWallet(new PrivateKey(this.walletKey, 'hex'));
+          // walletKey can be WIF (L/K/5 prefix) or hex — auto-detect
+          const pk = this.walletKey.match(/^[5KL]/)
+            ? PrivateKey.fromWif(this.walletKey)
+            : new PrivateKey(this.walletKey, 'hex');
+          const serverWallet = new ProtoWallet(pk);
 
           app.use(createAuthMiddleware({
             wallet: serverWallet as any,
@@ -130,6 +134,15 @@ export class GUIServer {
 
     app.get('/api/tokens', (_req: Request, res: Response) => {
       res.json(getAllTokens());
+    });
+
+    app.get('/api/marketplace', (_req: Request, res: Response) => {
+      const bridge = this.agent.getMarketplaceBridge?.();
+      if (!bridge) {
+        res.json({ tokens: [], stats: null, bsvPrice: null, lastSyncedAt: 0 });
+        return;
+      }
+      res.json(bridge.getData());
     });
 
     app.get('/api/portfolio', (_req: Request, res: Response) => {

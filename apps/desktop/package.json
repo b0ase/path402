@@ -15,12 +15,13 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux",
-    "dist:all": "electron-builder -mwl"
+    "dist:win": "bash scripts/dist-cross.sh --win",
+    "dist:linux": "bash scripts/dist-cross.sh --linux",
+    "dist:all": "bash scripts/dist-cross.sh --linux && bash scripts/dist-cross.sh --win && electron-builder --mac"
   },
   "dependencies": {
     "@path402/core": "workspace:*",
+    "@path402/htm": "workspace:*",
     "@anthropic-ai/sdk": "^0.39.0",
     "@babbage/sdk": "^0.4.48",
     "@modelcontextprotocol/sdk": "^1.12.1",

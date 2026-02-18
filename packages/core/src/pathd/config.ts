@@ -15,6 +15,7 @@ export interface PathDConfig {
   walletKey?: string;
   tokenId?: string;
   bootstrapPeers?: string[];
+  marketplaceUrl?: string;
   verbose: boolean;
 }
 
@@ -36,6 +37,7 @@ export class Config implements PathDConfig {
   walletKey?: string;
   tokenId?: string;
   bootstrapPeers?: string[];
+  marketplaceUrl?: string;
   verbose: boolean;
   configPath: string;
 
@@ -59,6 +61,7 @@ export class Config implements PathDConfig {
     if (process.env.HTM_TOKEN_ID) this.tokenId = process.env.HTM_TOKEN_ID;
     if (process.env.PATHD_POW_ENABLED) this.powEnabled = process.env.PATHD_POW_ENABLED === 'true';
     if (process.env.PATHD_POW_THREADS) this.powThreads = parseInt(process.env.PATHD_POW_THREADS);
+    if (process.env.PATH402_MARKETPLACE_URL) this.marketplaceUrl = process.env.PATH402_MARKETPLACE_URL;
 
     // Load from config file
     this.loadConfigFile();
@@ -87,6 +90,7 @@ export class Config implements PathDConfig {
         if (fileConfig.walletKey) this.walletKey = fileConfig.walletKey;
         if (fileConfig.tokenId) this.tokenId = fileConfig.tokenId;
         if (Array.isArray(fileConfig.bootstrapPeers)) this.bootstrapPeers = fileConfig.bootstrapPeers;
+        if (fileConfig.marketplaceUrl) this.marketplaceUrl = fileConfig.marketplaceUrl;
       } catch {
         // Invalid config file, use defaults
       }
@@ -109,6 +113,7 @@ export class Config implements PathDConfig {
     if (this.walletKey) config.walletKey = this.walletKey;
     if (this.tokenId) config.tokenId = this.tokenId;
     if (this.bootstrapPeers?.length) config.bootstrapPeers = this.bootstrapPeers;
+    if (this.marketplaceUrl) config.marketplaceUrl = this.marketplaceUrl;
     writeFileSync(this.configPath, JSON.stringify(config, null, 2));
   }
 }

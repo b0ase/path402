@@ -125,6 +125,10 @@ export type { VerificationResult } from "./services/dns.js";
 export { Path402Agent, runAgent } from "./client/agent.js";
 export type { AgentConfig, AgentStatus } from "./client/agent.js";
 
+// Marketplace bridge exports
+export { MarketplaceBridge } from "./services/marketplace-bridge.js";
+export type { MarketplaceData, MarketplaceToken, MarketplaceStats } from "./services/marketplace-bridge.js";
+
 // Call signaling types
 export { CallSignalType } from "./gossip/protocol.js";
 export type { CallSignalMessage, CallOfferPayload, CallAnswerPayload, CallRejectPayload, CallHangupPayload, IceCandidatePayload } from "./gossip/protocol.js";

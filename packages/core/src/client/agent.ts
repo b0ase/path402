@@ -18,7 +18,10 @@ import type { CallSignalMessage } from '../gossip/protocol.js';
 import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculation/engine.js';
 import { IntelligenceProvider } from '../intelligence/provider.js';
 import { ClaudeIntelligenceProvider } from '../intelligence/claude.js';
+import { OllamaIntelligenceProvider } from '../intelligence/ollama.js';
+import { RoutingIntelligenceProvider } from '../intelligence/routing.js';
 import { GUIServer } from '../gui/server.js';
+import { MarketplaceBridge } from '../services/marketplace-bridge.js';
 import { FsContentStore } from '../content/fs-store.js';
 import { loadDemoContent } from '../content/demo-loader.js';
 import type { ContentStore } from '../content/store.js';
@@ -56,9 +59,12 @@ export interface AgentConfig {
   maxPeers?: number;
 
   // Intelligence
-  aiProvider?: 'claude' | 'openai' | 'ollama';
+  aiProvider?: 'claude' | 'openai' | 'ollama' | 'routing';
   aiApiKey?: string;
   aiModel?: string;
+  localModel?: string;
+  midModel?: string;
+  frontierModel?: string;
 
   // Speculation
   speculationEnabled?: boolean;
@@ -74,6 +80,9 @@ export interface AgentConfig {
   guiEnabled?: boolean;
   guiPort?: number;
   guiUiPath?: string;
+
+  // Marketplace
+  marketplaceUrl?: string;
 }
 
 export interface AgentStatus {
@@ -125,6 +134,7 @@ export class Path402Agent extends EventEmitter {
   private intelligenceProvider: IntelligenceProvider | null = null;
   private guiServer: GUIServer | null = null;
   private miningService: ProofOfIndexingService | null = null;
+  private marketplaceBridge: MarketplaceBridge | null = null;
   private contentStore: FsContentStore | null = null;
   private config: AgentConfig;
   private running = false;
@@ -172,11 +182,21 @@ export class Path402Agent extends EventEmitter {
     let minerAddr = process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS || '';
     let broadcaster: MintBroadcaster | undefined;
 
-    // Try to create HTM broadcaster via dynamic import (isolates scrypt-ts CJS deps)
+    // Try to create HTM broadcaster via dynamic require (isolates scrypt-ts CJS deps)
     if (tokenId && walletKey) {
       try {
-        const require = createRequire(import.meta.url);
-        const htm: any = require('@path402/htm');
+        // Build a working require() for both ESM and esbuild CJS contexts
+        let _require: NodeRequire;
+        try {
+          _require = createRequire(import.meta.url);
+        } catch {
+          // esbuild CJS: import.meta.url is undefined, use __filename or cwd
+          const base = typeof __filename !== 'undefined'
+            ? `file://${__filename}`
+            : `file://${process.cwd()}/node_modules`;
+          _require = createRequire(base);
+        }
+        const htm: any = _require('@path402/htm');
         const htmBroadcaster = new htm.HtmBroadcaster(tokenId, walletKey);
         broadcaster = htmBroadcaster;
         if (!minerAddr) minerAddr = htmBroadcaster.getMinerAddress();
@@ -217,6 +237,24 @@ export class Path402Agent extends EventEmitter {
       console.warn('[Agent] Demo content loading failed:', err);
     }
 
+    // Start marketplace bridge
+    this.marketplaceBridge = new MarketplaceBridge(
+      this.config.marketplaceUrl || 'https://path402.com'
+    );
+    this.marketplaceBridge.on('tokens:synced', (tokens) => {
+      this.emit('tokens:synced', tokens);
+      // Queue marketplace tokens for speculation evaluation
+      if (this.speculationEngine) {
+        for (const t of tokens) {
+          this.speculationEngine.queueEvaluation(t.address);
+        }
+      }
+    });
+    this.marketplaceBridge.on('synced', () => {
+      this.emit('marketplace:synced');
+    });
+    await this.marketplaceBridge.start();
+
     // Start GUI if enabled
     if (this.config.guiEnabled !== false) {
       this.guiServer = new GUIServer(this, this.config.guiPort || 4021, this.config.guiUiPath, this.config.walletKey);
@@ -237,6 +275,11 @@ export class Path402Agent extends EventEmitter {
     if (this.guiServer) {
       this.guiServer.stop();
       this.guiServer = null;
+    }
+
+    if (this.marketplaceBridge) {
+      this.marketplaceBridge.stop();
+      this.marketplaceBridge = null;
     }
 
     if (this.gossipNode) {
@@ -264,12 +307,23 @@ export class Path402Agent extends EventEmitter {
         );
         break;
 
-      // TODO: Add OpenAI and Ollama providers
+      case 'ollama':
+        this.intelligenceProvider = new OllamaIntelligenceProvider(
+          this.config.aiModel || 'llama3'
+        );
+        break;
+
+      case 'routing': {
+        const local = new OllamaIntelligenceProvider(this.config.localModel || 'llama3');
+        const mid = new ClaudeIntelligenceProvider(this.config.aiApiKey, this.config.midModel || 'claude-3-haiku-20240307');
+        const frontier = new ClaudeIntelligenceProvider(this.config.aiApiKey, this.config.frontierModel || 'claude-3-5-sonnet-20240620');
+
+        this.intelligenceProvider = new RoutingIntelligenceProvider(local, mid, frontier);
+        break;
+      }
+
       case 'openai':
         throw new Error('OpenAI provider not yet implemented');
-
-      case 'ollama':
-        throw new Error('Ollama provider not yet implemented');
 
       default:
         throw new Error(`Unknown AI provider: ${provider}`);
@@ -676,6 +730,13 @@ export class Path402Agent extends EventEmitter {
   getContentStore(): FsContentStore | null {
     return this.contentStore;
   }
+
+  /**
+   * Get the marketplace bridge instance
+   */
+  getMarketplaceBridge(): MarketplaceBridge | null {
+    return this.marketplaceBridge;
+  }
 }
 
 // ── CLI Entry Point ────────────────────────────────────────────────
@@ -693,6 +754,9 @@ export async function runAgent(config: AgentConfig = {}): Promise<Path402Agent> 
   }
   if (!config.dataDir) {
     config.dataDir = daemonConfig.dataDir;
+  }
+  if (!config.marketplaceUrl && daemonConfig.marketplaceUrl) {
+    config.marketplaceUrl = daemonConfig.marketplaceUrl;
   }
 
   const agent = new Path402Agent(config);

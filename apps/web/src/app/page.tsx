@@ -1,7 +1,7 @@
 'use client';
 
 import { Navigation } from '@/components/Navigation';
-import { useStatus, usePortfolio, usePeers, useToggleSpeculation, useToggleAutoAcquire } from '@/hooks/useAPI';
+import { useStatus, usePortfolio, usePeers, useToggleSpeculation, useToggleAutoAcquire, useMarketplace } from '@/hooks/useAPI';
 import { motion } from 'framer-motion';
 import { PageContainer } from '@/components/PageContainer';
 import { PageHeader } from '@/components/PageHeader';
@@ -53,6 +53,7 @@ export default function HomePage() {
   const { data: status, isError: statusError, isFetching: statusFetching } = useStatus();
   const { data: portfolio } = usePortfolio();
   const { data: peers } = usePeers();
+  const { data: marketplace } = useMarketplace();
   const toggleSpeculation = useToggleSpeculation();
   const toggleAutoAcquire = useToggleAutoAcquire();
 
@@ -181,6 +182,49 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
+        {/* ── $402 HTM MINING ─── BLUE ($402) ──────────────────── */}
+        {backendOnline && status.mining && (
+          <section className="mb-8">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-blue-400 mb-3 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+              $402 HTM — Proof of Indexing
+            </div>
+            <div className="border border-blue-500/30 p-5 bg-blue-950/10">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div>
+                  <div className="text-[9px] text-blue-400/70 font-mono uppercase tracking-[0.2em] mb-1">Mining</div>
+                  <div className="text-lg font-black text-blue-400">
+                    {status.mining?.enabled ? 'ACTIVE' : 'DISABLED'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-blue-400/70 font-mono uppercase tracking-[0.2em] mb-1">Broadcaster</div>
+                  <div className="text-lg font-black text-blue-400">
+                    {status.mining?.broadcasterConnected ? 'CONNECTED' : 'OFFLINE'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-blue-400/70 font-mono uppercase tracking-[0.2em] mb-1">BSV/USD</div>
+                  <div className="text-lg font-black text-blue-400">
+                    {marketplace?.bsvPrice ? `$${marketplace.bsvPrice.toFixed(2)}` : '--'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-blue-400/70 font-mono uppercase tracking-[0.2em] mb-1">Token ID</div>
+                  <div className="text-xs font-mono text-blue-400/80 truncate" title={status.mining?.tokenId}>
+                    {status.mining?.tokenId?.slice(0, 16)}...
+                  </div>
+                </div>
+              </div>
+              {!status.mining?.broadcasterConnected && (
+                <div className="mt-3 text-[9px] font-mono text-blue-600">
+                  Blocks are being mined but cannot be claimed on-chain. @path402/htm broadcaster needed.
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ── AGENT CONTROLS ─────────────────────────────────────── */}
         <section className="mb-8">

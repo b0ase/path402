@@ -29,7 +29,7 @@ export const ProjectManifestSchema = z.object({
     identity: z.string().optional(),
 
     /** Pricing model */
-    pricing: z.enum(['sqrt_decay', 'flat', 'linear']).default('alice_bond'),
+    pricing: z.enum(['sqrt_decay', 'flat', 'linear', 'alice_bond']).default('alice_bond'),
 
     /** Base price in satoshis */
     basePrice: z.number().int().positive().default(100),

@@ -16,6 +16,11 @@ export interface AgentStatus {
   totalPnL: number;
   speculationEnabled: boolean;
   autoAcquireEnabled: boolean;
+  mining?: {
+    enabled: boolean;
+    broadcasterConnected: boolean;
+    tokenId: string;
+  };
 }
 
 export interface Token {
@@ -97,7 +102,12 @@ function mapStatus(data: any): AgentStatus {
     portfolioValue: data.portfolio?.totalValue || 0,
     totalPnL: data.portfolio?.pnl || 0,
     speculationEnabled: data.speculation?.enabled || false,
-    autoAcquireEnabled: data.speculation?.autoAcquire || false
+    autoAcquireEnabled: data.speculation?.autoAcquire || false,
+    mining: data.mining ? {
+      enabled: data.mining.enabled,
+      broadcasterConnected: data.mining.broadcasterConnected,
+      tokenId: data.mining.tokenId,
+    } : undefined,
   };
 }
 
@@ -200,6 +210,44 @@ export function useToggleAutoAcquire() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['status'] });
     }
+  });
+}
+
+// Marketplace hooks
+export interface MarketplaceData {
+  tokens: MarketplaceToken[];
+  stats: MarketplaceStats | null;
+  bsvPrice: number | null;
+  lastSyncedAt: number;
+}
+
+export interface MarketplaceToken {
+  address: string;
+  name: string;
+  issuer_handle: string | null;
+  current_supply: number;
+  current_price_sats: number;
+  base_price_sats: number;
+  pricing_model: string;
+  content_type: string | null;
+  access_url: string | null;
+}
+
+export interface MarketplaceStats {
+  tokenLabel: string;
+  totalInscriptions: number;
+  totalFees: number;
+  currentPrice: number;
+  supplySold: number;
+  treasuryRemaining: number;
+}
+
+export function useMarketplace() {
+  return useQuery({
+    queryKey: ['marketplace'],
+    queryFn: () => fetchAPI<MarketplaceData>('/api/marketplace'),
+    refetchInterval: 30_000, // Sync with bridge interval
+    retry: 2,
   });
 }
 

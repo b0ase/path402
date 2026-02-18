@@ -164,6 +164,7 @@ async function startAgent(): Promise<void> {
     tokenId: daemonConfig.tokenId,
     dataDir: daemonConfig.dataDir,
     bootstrapPeers: daemonConfig.bootstrapPeers,
+    marketplaceUrl: daemonConfig.marketplaceUrl,
   };
 
   agent = new Path402Agent(config);

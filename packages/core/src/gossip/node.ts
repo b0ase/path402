@@ -98,7 +98,19 @@ export class GossipNode extends EventEmitter {
 
     console.log(`[GossipNode] Initializing libp2p node ${this.nodeId.slice(0, 8)}...`);
 
-    const bootstrapNodes = this.config.bootstrapPeers.map(addr => addr.startsWith('/') ? addr : `/ip4/${addr.split(':')[0]}/tcp/${addr.split(':')[1] || GOSSIP_PORT}/p2p/REPLACE_ME`);
+    // Separate full multiaddrs (contain /p2p/) from bare host:port peers
+    // Only full multiaddrs can be used for bootstrap discovery
+    const fullMultiaddrs: string[] = [];
+    const manualPeers: string[] = [];
+
+    for (const addr of this.config.bootstrapPeers) {
+      if (addr.startsWith('/') && addr.includes('/p2p/')) {
+        fullMultiaddrs.push(addr);
+      } else {
+        // host:port or /ip4/.../tcp/... without peer ID — dial manually after start
+        manualPeers.push(addr);
+      }
+    }
 
     this.libp2p = await createLibp2p({
       addresses: {
@@ -127,10 +139,10 @@ export class GossipNode extends EventEmitter {
         version: '3.0.0',
         userAgent: 'path402/3.0.0'
       },
-      // Peer discovery via bootstrap
-      peerDiscovery: this.config.bootstrapPeers.length > 0 ? [
+      // Peer discovery via bootstrap (only full multiaddrs with peer IDs)
+      peerDiscovery: fullMultiaddrs.length > 0 ? [
         bootstrap({
-          list: this.config.bootstrapPeers
+          list: fullMultiaddrs
         }) as any
       ] : []
     } as any);
@@ -141,6 +153,20 @@ export class GossipNode extends EventEmitter {
 
     // Start node
     await this.libp2p.start();
+
+    // Dial manual peers (host:port without peer IDs) after startup
+    if (manualPeers.length > 0) {
+      console.log(`[GossipNode] Dialling ${manualPeers.length} manual peer(s)...`);
+      for (const peer of manualPeers) {
+        const addr = peer.startsWith('/')
+          ? peer
+          : `/ip4/${peer.split(':')[0]}/tcp/${peer.split(':')[1] || GOSSIP_PORT}`;
+        // Fire-and-forget — don't block startup on peer dial
+        this.connectToPeer(addr).catch(() => {
+          // Logged inside connectToPeer
+        });
+      }
+    }
 
     // Subscribe to topics
     if (this.libp2p) {
