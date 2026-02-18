@@ -32,7 +32,8 @@ import {
   TokenStatsInputSchema,
   HoldersInputSchema,
   VerifyHolderInputSchema,
-  ConnectWalletInputSchema
+  ConnectWalletInputSchema,
+  X402InputSchema
 } from "./schemas/inputs.js";
 import type {
   DiscoverInput,
@@ -48,7 +49,8 @@ import type {
   TokenStatsInput,
   HoldersInput,
   VerifyHolderInput,
-  ConnectWalletInput
+  ConnectWalletInput,
+  X402Input
 } from "./schemas/inputs.js";
 
 import { discover, acquireContent } from "./services/client.js";
@@ -82,6 +84,7 @@ import {
   hasTokens,
   verifyTokenOwnership
 } from "./services/database.js";
+import { chainAgents } from "./services/x402.js";
 import { getWalletManager } from "./wallet/index.js";
 
 // Token minting exports
@@ -132,6 +135,12 @@ export type { PathDConfig } from "./pathd/config.js";
 
 // Identity + Call Record DB types
 export type { IdentityToken, CallRecord } from "./db/index.js";
+
+// Publish exports
+export { publishProject, initManifest } from "./publish/publisher.js";
+export type { PublishOptions, PublishResult, FileEntry } from "./publish/publisher.js";
+export { ProjectManifestSchema, parseManifest, createManifestFromFlags, generateManifestTemplate } from "./publish/manifest.js";
+export type { ProjectManifest } from "./publish/manifest.js";
 
 // ── Global Services ─────────────────────────────────────────────
 import { ProofOfIndexingService } from "./services/mining.js";
@@ -725,7 +734,7 @@ server.registerTool(
   "path402_economics",
   {
     title: "$402 Economics Analysis",
-    description: `Deep dive into the economics of a $402 token. Shows breakeven analysis, ROI projections at different supply levels, and the mathematical explanation of why sqrt_decay works.
+    description: `Deep dive into the economics of a $402 token. Shows breakeven analysis, ROI projections at different supply levels, and the mathematical explanation of the ascending bonding curve.
 
 Use this to understand whether a $address is a good investment, when you'll break even, and how much you can expect to earn.
 
@@ -1076,7 +1085,7 @@ server.registerTool(
     description: `Get REAL token statistics from the $402 database. This queries the live Supabase database to show:
 - Treasury balance and address
 - Circulating supply and total sold
-- Current price (calculated from sqrt_decay)
+- Current price (ascending bonding curve)
 - Total revenue collected
 - Number of holders
 
@@ -1301,5 +1310,90 @@ Returns:
     }
   }
 );
+
+// ── Tool: x402 ──────────────────────────────────────────────────
+
+server.registerTool(
+  "path402_x402",
+  {
+    title: "X402 Agent Chaining",
+    description: `Execute a complex task by chaining multiple x402 agents with automatic discovery, payment, and output piping.
+
+Agents discover each other, authenticate via BRC-31, and pay in satoshis — automatically.
+Supports: image generation (Banana), video (Kling/Veo), transcription (Whisper), research (X/Twitter), file hosting (NanoStore).
+
+Pipeline is planned from the prompt:
+  "Generate an image of a jellyfish" → image → host
+  "Create a video of a sunset" → image → video-kling → host
+  "Make a cinematic 4k video" → image → video-veo → host
+
+Args:
+  - prompt (string): Natural language description of the goal
+  - max_total_budget (number): Budget limit in SAT (default: 50000)
+
+Returns:
+  Chain result with per-step costs, durations, output URLs, and total spend.`,
+    inputSchema: X402InputSchema
+  },
+  async (params: X402Input) => {
+    try {
+      const result = await chainAgents(params.prompt, params.max_total_budget);
+
+      if (!result.success) {
+        const lines = [
+          `## X402 Chain: Failed`,
+          "",
+          `**Error:** ${result.error}`,
+          `**Spent before failure:** ${result.totalCostSats} SAT`,
+        ];
+        if (result.steps.length > 0) {
+          lines.push("", "### Completed steps:");
+          for (const step of result.steps) {
+            const status = step.output ? 'OK' : 'FAIL';
+            lines.push(`- **${step.agentName}** (${step.action}): ${status} — ${step.costSats} SAT, ${step.durationMs}ms`);
+          }
+        }
+        return {
+          isError: true,
+          content: [{ type: "text", text: lines.join("\n") }],
+          structuredContent: result
+        };
+      }
+
+      const lines = [
+        `## X402 Chain: Complete`,
+        "",
+        `**Prompt:** "${params.prompt}"`,
+        `**Total Cost:** ${result.totalCostSats} SAT`,
+        `**Duration:** ${result.totalDurationMs}ms`,
+        `**Output:** ${result.finalOutputUrl || result.finalOutput}`,
+        "",
+        "### Pipeline:",
+      ];
+
+      for (let i = 0; i < result.steps.length; i++) {
+        const step = result.steps[i];
+        const arrow = i < result.steps.length - 1 ? ' →' : '';
+        lines.push(
+          `${i + 1}. **${step.agentName}** (${step.action})${arrow}`,
+          `   Cost: ${step.costSats} SAT | Time: ${step.durationMs}ms`,
+          step.outputUrl ? `   Output: ${step.outputUrl}` : `   Output: ${step.output.slice(0, 120)}`,
+        );
+      }
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: result
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        isError: true,
+        content: [{ type: "text", text: `X402 execution failed: ${msg}` }]
+      };
+    }
+  }
+);
+
 
 // Side-effects removed. Use runServer() from mcp.ts to start.

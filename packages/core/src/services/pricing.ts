@@ -169,7 +169,7 @@ export function calculateTotalRevenue(
 }
 
 /**
- * Generate the mathematical explanation for sqrt_decay economics
+ * Generate the mathematical explanation for token economics
  */
 export function explainEconomics(
   pricingRules: PricingRules,
@@ -185,29 +185,33 @@ export function explainEconomics(
 
   if (pricingRules.model === PricingModel.SQRT_DECAY) {
     return [
-      `## sqrt_decay Economics`,
+      `## Legacy Pricing (sqrt_decay)`,
       ``,
       `**Price formula**: P(n) = ${P} / √n`,
       `**Your position**: n = ${n}`,
       `**You paid**: ${Math.round(P / Math.sqrt(n))} SAT`,
       ``,
-      `**Revenue split**:`,
-      `- Issuer: ${Math.round(issuerShare * 100)}%`,
-      `- Serving network: ${Math.round(serverShare * 100)}%`,
-      ``,
-      `**Key insight**: Under sqrt_decay, the sum of future prices diverges slowly.`,
-      `Each buyer after you pays less, but there are more of them.`,
-      ``,
-      `**Your expected serving revenue at N=${N}**:`,
-      `Revenue ≈ ${Math.round(serverShare * 100)}% × Σ(P/√k) for k=${n+1}..${N}`,
-      `       ≈ ${Math.round(serverShare * 100)}% × ${P} × 2(√${N} - √${n})`,
-      `       ≈ ${Math.round(serverShare * P * 2 * (Math.sqrt(N) - Math.sqrt(n)))} SAT`,
-      ``,
-      `**Net position**: Revenue - Cost = ROI`,
-      ``,
-      `*The math favors early buyers. Every buyer except the last achieves positive ROI.*`
+      `*Note: This token uses a legacy pricing model. New tokens use ascending bonding curves.*`
     ].join("\n");
   }
 
-  return `Price model: ${pricingRules.model}. Base price: ${P} SAT.`;
+  // Default: ascending bonding curve (alice_bond)
+  return [
+    `## Ascending Bonding Curve Economics`,
+    ``,
+    `**Price formula**: P(n) = c × n (each token priced individually, ascending)`,
+    `**Your position**: n = ${n}`,
+    `**Projected supply**: N = ${N}`,
+    ``,
+    `**Revenue split**:`,
+    `- Stakers: ${Math.round(issuerShare * 100)}%`,
+    `- Platform: ${Math.round(serverShare * 100)}%`,
+    ``,
+    `**Key insight**: Early buyers pay less per token. Price increases linearly with supply.`,
+    `Cost to acquire K% of supply = $1,000 × K². First 1% costs $1,000. First 10% costs $100,000.`,
+    ``,
+    `**Dividends**: 100% of revenue from later buyers distributed to existing stakers.`,
+    ``,
+    `*The math favors early buyers. Every position except the last achieves positive ROI.*`
+  ].join("\n");
 }

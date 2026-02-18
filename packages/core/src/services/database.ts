@@ -198,7 +198,7 @@ export async function getTokenStats(): Promise<TokenStats | null> {
   const totalSupply = 1_000_000_000; // 1 billion total supply
   const circulatingSupply = treasury.total_sold;
 
-  // Calculate current price using sqrt_decay
+  // Calculate current price
   // price = basePrice / sqrt(supply + 1)
   const basePrice = 500; // 500 sats base price
   const currentPriceSats = Math.ceil(basePrice / Math.sqrt(circulatingSupply + 1));

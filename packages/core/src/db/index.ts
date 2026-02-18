@@ -252,7 +252,7 @@ export function upsertToken(token: Partial<Token> & { token_id: string }): void 
       token.issuer_address ?? null,
       token.issuer_handle ?? null,
       token.base_price_sats ?? 500,
-      token.pricing_model ?? 'sqrt_decay',
+      token.pricing_model ?? 'alice_bond',
       token.current_supply ?? 0,
       token.content_type ?? null,
       token.content_preview ?? null,

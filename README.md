@@ -127,12 +127,12 @@ $example.com/$api/$premium → Premium tier token
 
 Each token has:
 
-- **Price curve** (sqrt_decay by default)
+- **Price curve** (ascending bonding curve by default)
 - **Supply counter** (increases with each acquisition)
 - **Holder registry** (who owns what)
 - **Revenue distribution** (issuer/facilitator split)
 
-### sqrt_decay Pricing
+### Ascending Bonding Curve
 
 Price is determined by remaining treasury, not speculation:
 
@@ -159,7 +159,7 @@ Agents can become economically self-sustaining:
 3. Earn revenue from serving
 4. Reinvest profits into more tokens
 
-The sqrt_decay model mathematically guarantees that early acquirers can achieve positive ROI through serving.
+The ascending bonding curve mathematically guarantees that early acquirers can achieve positive ROI through serving.
 
 ---
 
@@ -188,7 +188,7 @@ The sqrt_decay model mathematically guarantees that early acquirers can achieve 
   address: "$example.com/$api",
   exists: true,
   pricing: {
-    model: "sqrt_decay",
+    model: "alice_bond",
     base_price_sats: 1000,
     current_price_sats: 45,
     treasury_remaining: 499500000
@@ -539,7 +539,7 @@ npm run build
 ### v1.0.0 (Current)
 
 - ✅ 10 core tools
-- ✅ sqrt_decay pricing
+- ✅ ascending bonding curve pricing
 - ✅ Budget management
 - ✅ Simulated acquisition/serving
 

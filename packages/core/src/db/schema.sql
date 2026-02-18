@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS tokens (
 
   -- Pricing
   base_price_sats INTEGER NOT NULL DEFAULT 500,
-  pricing_model TEXT NOT NULL DEFAULT 'sqrt_decay',
+  pricing_model TEXT NOT NULL DEFAULT 'alice_bond',
   decay_factor REAL DEFAULT 1.0,
 
   -- Supply

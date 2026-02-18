@@ -286,7 +286,7 @@ export class Daemon {
         total_supply: stats?.totalSupply || 1_000_000_000,
         circulating_supply: stats?.circulatingSupply || 0,
         current_price_sats: stats?.currentPriceSats || 500,
-        pricing_model: 'sqrt_decay',
+        pricing_model: 'alice_bond',
         base_price_sats: 500,
       },
       node: {
