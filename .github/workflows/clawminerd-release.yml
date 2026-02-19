@@ -17,19 +17,28 @@ jobs:
             goos: darwin
             goarch: arm64
             suffix: darwin-arm64
+            ext: ''
           - os: macos-latest
             goos: darwin
             goarch: amd64
             suffix: darwin-amd64
+            ext: ''
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
             suffix: linux-amd64
+            ext: ''
           - os: ubuntu-latest
             goos: linux
             goarch: arm64
             suffix: linux-arm64
             cc: aarch64-linux-gnu-gcc
+            ext: ''
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            suffix: windows-amd64
+            ext: '.exe'
 
     runs-on: ${{ matrix.os }}
 
@@ -47,17 +56,19 @@ jobs:
 
       - name: Extract version from tag
         id: version
+        shell: bash
         run: echo "version=${GITHUB_REF_NAME#clawminerd-v}" >> $GITHUB_OUTPUT
 
       - name: Build binary
         working-directory: apps/clawminer
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 1
           CC: ${{ matrix.cc || '' }}
         run: |
-          BINARY="clawminerd-v${{ steps.version.outputs.version }}-${{ matrix.suffix }}"
+          BINARY="clawminerd-v${{ steps.version.outputs.version }}-${{ matrix.suffix }}${{ matrix.ext }}"
           go build -ldflags "-s -w -X main.Version=${{ steps.version.outputs.version }}" \
             -o "build/${BINARY}" ./cmd/clawminerd/
           cd build && shasum -a 256 "${BINARY}" > "${BINARY}.sha256"
@@ -110,11 +121,17 @@ jobs:
             | macOS (Intel) | `clawminerd-v${{ steps.version.outputs.version }}-darwin-amd64` |
             | Linux (x86_64) | `clawminerd-v${{ steps.version.outputs.version }}-linux-amd64` |
             | Linux (ARM64) | `clawminerd-v${{ steps.version.outputs.version }}-linux-arm64` |
+            | Windows (x86_64) | `clawminerd-v${{ steps.version.outputs.version }}-windows-amd64.exe` |
 
-            ### Quick start
+            ### Quick start (macOS/Linux)
             ```bash
             chmod +x clawminerd-*
             ./clawminerd-v${{ steps.version.outputs.version }}-<platform>
+            ```
+
+            ### Quick start (Windows)
+            ```powershell
+            .\clawminerd-v${{ steps.version.outputs.version }}-windows-amd64.exe
             ```
 
             The daemon creates `~/.clawminer/`, opens SQLite, starts gossip on :4020, and begins mining.
