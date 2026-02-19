@@ -1,0 +1,32 @@
+# ClawMiner Configuration
+# Copy to ~/.clawminer/clawminer.yaml
+
+data_dir: ~/.clawminer
+
+gossip:
+  port: 4020
+  bootstrap_peers: []
+  max_peers: 50
+
+api:
+  port: 8402
+  bind: "127.0.0.1"
+
+wallet:
+  key: ""                      # WIF private key (or CLAWMINER_WALLET_KEY env)
+
+mining:
+  enabled: true
+  difficulty: 3
+  heartbeat_interval: 15s
+  min_items: 5
+  batch_size: 10
+  token_id: ""                 # HTM contract txid (or HTM_TOKEN_ID env)
+  broadcast_mode: "none"       # "native" (BSV tx via ARC), "http" (external service), "none"
+  arc_url: ""                  # ARC broadcaster URL (default: https://arc.taal.com)
+  arc_api_key: ""              # ARC API key (optional, or CLAWMINER_ARC_API_KEY env)
+  mint_endpoint: ""            # HTTP mint service URL for broadcast_mode=http
+
+log:
+  level: info                  # debug, info, warn, error
+  format: text                 # text, json
