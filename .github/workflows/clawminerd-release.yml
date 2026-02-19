@@ -110,8 +110,15 @@ jobs:
             - Proof-of-Indexing mining engine (double-SHA256, configurable difficulty)
             - Native BSV broadcasting (TAAL ARC) or HTTP bridge
             - Embedded SQLite database (auto-migrates on first run)
-            - HTTP API on port 8402 (health, status, tokens, portfolio, peers, mining)
+            - HTTP API on port 8402 with automatic fallback
             - BSV wallet (WIF import, key generation, or public address only)
+            - `--address` flag and first-run interactive prompt
+
+            ### Changes since v0.1.0
+            - **Wallet persistence** — auto-generated wallets are saved to DB and reused across restarts (no more lost keys)
+            - **Configurable mining address** — set `wallet.address` in config, use `--address` flag, or enter at first-run prompt
+            - **Persistent libp2p identity** — stable peer ID across restarts, eliminates mDNS stale-peer noise
+            - **Port conflict handling** — if port 8402 is in use, automatically falls back to 8403
 
             ### Download
 
@@ -123,16 +130,21 @@ jobs:
             | Linux (ARM64) | `clawminerd-v${{ steps.version.outputs.version }}-linux-arm64` |
             | Windows (x86_64) | `clawminerd-v${{ steps.version.outputs.version }}-windows-amd64.exe` |
 
-            ### Quick start (macOS/Linux)
+            ### Quick start
             ```bash
+            # macOS/Linux
             chmod +x clawminerd-*
             ./clawminerd-v${{ steps.version.outputs.version }}-<platform>
-            ```
 
-            ### Quick start (Windows)
-            ```powershell
+            # With your own address
+            ./clawminerd-v${{ steps.version.outputs.version }}-<platform> --address 1YourBSVAddress...
+
+            # Windows
             .\clawminerd-v${{ steps.version.outputs.version }}-windows-amd64.exe
             ```
+
+            On first run with no address configured, the miner will prompt you to enter one.
+            Use a P2PKH address (starts with `1`) from an Ordinals-compatible BSV wallet you control.
 
             The daemon creates `~/.clawminer/`, opens SQLite, starts gossip on :4020, and begins mining.
             Check status: `curl localhost:8402/health`
