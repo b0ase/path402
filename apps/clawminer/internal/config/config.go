@@ -20,7 +20,8 @@ type APIConfig struct {
 }
 
 type WalletConfig struct {
-	Key string `yaml:"key"`
+	Key     string `yaml:"key"`
+	Address string `yaml:"address"` // Public BSV address for mining rewards (no private key needed)
 }
 
 type MiningConfig struct {
@@ -109,6 +110,9 @@ func Load(path string) (*Config, error) {
 func (c *Config) applyEnv() {
 	if v := os.Getenv("CLAWMINER_WALLET_KEY"); v != "" {
 		c.Wallet.Key = v
+	}
+	if v := os.Getenv("CLAWMINER_WALLET_ADDRESS"); v != "" {
+		c.Wallet.Address = v
 	}
 	if v := os.Getenv("HTM_TOKEN_ID"); v != "" {
 		c.Mining.TokenID = v

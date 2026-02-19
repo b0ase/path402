@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/b0ase/path402/apps/clawminer/internal/mining"
 	"github.com/b0ase/path402/apps/clawminer/internal/server"
 	"github.com/b0ase/path402/apps/clawminer/internal/wallet"
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
 
 // Daemon orchestrates all ClawMiner subsystems.
@@ -47,25 +49,59 @@ func (d *Daemon) Start() error {
 	d.nodeID = nodeID
 	log.Printf("[daemon] Node ID: %s", nodeID[:16])
 
-	// 3. Load wallet (optional)
+	// 3. Load wallet — 4-tier priority:
+	//    1. WIF from config/env → full wallet with signing
+	//    2. Address from config/env → address-only, no signing
+	//    3. DB-saved WIF from previous auto-gen → full wallet
+	//    4. Auto-generate new keypair → save WIF to DB
+	minerAddr := ""
 	if d.cfg.Wallet.Key != "" {
 		w, err := wallet.Load(d.cfg.Wallet.Key)
 		if err != nil {
-			log.Printf("[daemon] Wallet load failed: %v (continuing without wallet)", err)
+			log.Printf("[wallet] WIF load failed: %v (continuing without signing key)", err)
 		} else {
 			d.wallet = w
+			minerAddr = w.Address
+			log.Printf("[wallet] Loaded from config WIF, address: %s", minerAddr)
 		}
-	} else {
-		log.Println("[daemon] No wallet key — mining rewards will use placeholder address")
+	}
+	if minerAddr == "" && d.cfg.Wallet.Address != "" {
+		minerAddr = d.cfg.Wallet.Address
+		log.Printf("[wallet] Mining rewards → %s", minerAddr)
+	}
+	if minerAddr == "" {
+		// Try loading a previously saved WIF from DB
+		if savedWIF, err := db.GetConfig("wallet_wif"); err == nil && savedWIF != "" {
+			w, err := wallet.Load(savedWIF)
+			if err != nil {
+				log.Printf("[wallet] DB WIF load failed: %v (will regenerate)", err)
+			} else {
+				d.wallet = w
+				minerAddr = w.Address
+				log.Printf("[wallet] Loaded persisted wallet: %s", minerAddr)
+			}
+		}
+	}
+	if minerAddr == "" {
+		// Generate a fresh wallet and persist to DB
+		w, err := wallet.Generate()
+		if err != nil {
+			return fmt.Errorf("generate wallet: %w", err)
+		}
+		if err := db.SetConfig("wallet_wif", w.WIF); err != nil {
+			log.Printf("[wallet] WARNING: Failed to persist wallet WIF: %v", err)
+		}
+		d.wallet = w
+		minerAddr = w.Address
+		log.Printf("[wallet] Generated and saved new wallet: %s", minerAddr)
 	}
 
-	minerAddr := "1minerAddressPLACEHOLDER"
-	if d.wallet != nil {
-		minerAddr = d.wallet.Address
+	// 4. Start gossip node (with persistent identity)
+	identityKey, err := loadOrCreateLibp2pIdentity()
+	if err != nil {
+		log.Printf("[gossip] WARNING: Failed to load/create identity: %v (using ephemeral)", err)
 	}
-
-	// 4. Start gossip node
-	d.gossipNode = gossip.NewNode(d.nodeID, d.cfg.Gossip.Port, d.cfg.Gossip.MaxPeers)
+	d.gossipNode = gossip.NewNode(d.nodeID, d.cfg.Gossip.Port, d.cfg.Gossip.MaxPeers, identityKey)
 
 	handler := gossip.NewHandler(d.nodeID)
 	d.gossipNode.SetHandler(handler.HandleMessage)
@@ -150,13 +186,13 @@ func (d *Daemon) Start() error {
 	// 6. Start periodic status logging
 	go d.statusLoop()
 
-	// 6. Start HTTP API
+	// 7. Start HTTP API
 	d.httpSrv = server.New(d.cfg.API.Bind, d.cfg.API.Port, d)
-	go func() {
-		if err := d.httpSrv.Start(); err != nil {
-			log.Printf("[daemon] HTTP server error: %v", err)
-		}
-	}()
+	if port, err := d.httpSrv.Start(); err != nil {
+		log.Printf("[daemon] WARNING: HTTP API failed to start: %v (mining continues)", err)
+	} else {
+		log.Printf("[daemon] HTTP API on port %d", port)
+	}
 
 	log.Println("[daemon] All systems online")
 	return nil
@@ -228,4 +264,39 @@ func (d *Daemon) MiningStatus() map[string]interface{} {
 		return d.miner.Status()
 	}
 	return map[string]interface{}{"enabled": false}
+}
+
+// loadOrCreateLibp2pIdentity loads a persisted Ed25519 key from the DB,
+// or generates a new one and saves it. This gives the node a stable peer ID
+// across restarts, preventing mDNS "dial to self" errors from stale peer IDs.
+func loadOrCreateLibp2pIdentity() (libp2pcrypto.PrivKey, error) {
+	const dbKey = "libp2p_identity_key"
+
+	if saved, err := db.GetConfig(dbKey); err == nil && saved != "" {
+		raw, err := hex.DecodeString(saved)
+		if err != nil {
+			return nil, fmt.Errorf("hex decode identity: %w", err)
+		}
+		key, err := libp2pcrypto.UnmarshalPrivateKey(raw)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal identity: %w", err)
+		}
+		log.Println("[gossip] Loaded persisted libp2p identity")
+		return key, nil
+	}
+
+	// Generate new Ed25519 key
+	key, _, err := libp2pcrypto.GenerateKeyPair(libp2pcrypto.Ed25519, 0)
+	if err != nil {
+		return nil, fmt.Errorf("generate identity: %w", err)
+	}
+	raw, err := libp2pcrypto.MarshalPrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("marshal identity: %w", err)
+	}
+	if err := db.SetConfig(dbKey, hex.EncodeToString(raw)); err != nil {
+		return nil, fmt.Errorf("persist identity: %w", err)
+	}
+	log.Println("[gossip] Generated and saved new libp2p identity")
+	return key, nil
 }

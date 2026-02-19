@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
@@ -17,36 +19,39 @@ import (
 
 // Node wraps a libp2p host with GossipSub pub/sub.
 type Node struct {
-	nodeID    string
-	port      int
-	maxPeers  int
-	host      host.Host
-	ps        *pubsub.PubSub
-	topics    map[string]*pubsub.Topic
-	subs      map[string]*pubsub.Subscription
-	handler   MessageHandler
-	seenMsgs  map[string]bool
-	seenMu    sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.RWMutex
+	nodeID      string
+	port        int
+	maxPeers    int
+	identityKey libp2pcrypto.PrivKey
+	host        host.Host
+	ps          *pubsub.PubSub
+	topics      map[string]*pubsub.Topic
+	subs        map[string]*pubsub.Subscription
+	handler     MessageHandler
+	seenMsgs    map[string]bool
+	seenMu      sync.Mutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.RWMutex
 }
 
 // MessageHandler is called when a validated message arrives.
 type MessageHandler func(msg *GossipMessage)
 
 // NewNode creates a gossip node backed by libp2p + GossipSub.
-func NewNode(nodeID string, port, maxPeers int) *Node {
+// identityKey is optional — if non-nil, it provides a stable libp2p peer ID across restarts.
+func NewNode(nodeID string, port, maxPeers int, identityKey libp2pcrypto.PrivKey) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Node{
-		nodeID:   nodeID,
-		port:     port,
-		maxPeers: maxPeers,
-		topics:   make(map[string]*pubsub.Topic),
-		subs:     make(map[string]*pubsub.Subscription),
-		seenMsgs: make(map[string]bool),
-		ctx:      ctx,
-		cancel:   cancel,
+		nodeID:      nodeID,
+		port:        port,
+		maxPeers:    maxPeers,
+		identityKey: identityKey,
+		topics:      make(map[string]*pubsub.Topic),
+		subs:        make(map[string]*pubsub.Subscription),
+		seenMsgs:    make(map[string]bool),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -62,10 +67,15 @@ func (n *Node) Start() error {
 		return fmt.Errorf("multiaddr: %w", err)
 	}
 
-	h, err := libp2p.New(
+	opts := []libp2p.Option{
 		libp2p.ListenAddrs(listenAddr),
 		libp2p.ConnectionManager(nil),
-	)
+	}
+	if n.identityKey != nil {
+		opts = append(opts, libp2p.Identity(n.identityKey))
+	}
+
+	h, err := libp2p.New(opts...)
 	if err != nil {
 		return fmt.Errorf("libp2p new: %w", err)
 	}
@@ -266,6 +276,12 @@ func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	}
 	log.Printf("[gossip] mDNS discovered peer: %s", pi.ID)
 	if err := m.node.host.Connect(m.node.ctx, pi); err != nil {
+		// Stale mDNS records from previous ephemeral identities on this machine
+		// cause "dial to self attempted" — suppress since it's expected noise.
+		if strings.Contains(err.Error(), "dial to self attempted") {
+			log.Printf("[gossip] mDNS peer %s is stale self (ignoring)", pi.ID.String()[:16])
+			return
+		}
 		log.Printf("[gossip] mDNS connect to %s failed: %v", pi.ID, err)
 	}
 }

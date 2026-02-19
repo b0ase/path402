@@ -1,49 +1,47 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/config"
 	"github.com/b0ase/path402/apps/clawminer/internal/daemon"
 )
 
-var Version = "0.1.0"
+var Version = "0.1.1"
 
 func main() {
 	cfgPath := flag.String("config", "", "path to clawminer.yaml")
+	addressFlag := flag.String("address", "", "BSV address for mining rewards")
 	flag.Parse()
 
-	// ANSI orange: \033[38;5;208m  Reset: \033[0m
-	orange := "\033[38;5;208m"
-	reset := "\033[0m"
-	dim := "\033[2m"
+	clr := "\033[38;2;255;102;0m" // orange
+	rst := "\033[0m"              // reset
+	dim := "\033[2m"              // dim
 
-	fmt.Printf(orange+`
-        ,/}           ,/}
-       // }}         // }}
-      //  }}   _ _  //  }}
-     //  ,}} _| | |//  ,}}
-    //__/ }}/    |_//__/ }}
-    '---'{//  ___   '---'{/
-         | | / __| | __ ___      __
-         | || |    | |/ _`+"`"+` \ \ /\ / /
-         | || |__  | | (_| |\ V  V /
-         |_| \___| |_|\__,_| \_/\_/
-              __  __ _
-             |  \/  (_)_ __   ___ _ __
-             | |\/| | | '_ \ / _ \ '__|
-             | |  | | | | | |  __/ |
-             |_|  |_|_|_| |_|\___|_|
-`+reset+`
-  `+dim+`$402 Proof-of-Indexing Miner  v%s`+reset+`
-  `+orange+`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`+reset+`
-`, Version)
+	fmt.Print("\n" + clr)
+	fmt.Println(`  ██████╗ ██╗       █████╗  ██╗    ██╗              _.---"""""""""---._`)
+	fmt.Println(` ██╔════╝ ██║      ██╔══██╗ ██║    ██║           .-'                    '-._`)
+	fmt.Println(` ██║      ██║      ███████║ ██║ █╗ ██║         .'                            '.`)
+	fmt.Println(` ██║      ██║      ██╔══██║ ██║███╗██║        /                                )`)
+	fmt.Println(` ╚██████╗ ███████╗ ██║  ██║ ╚███╔███╔╝        |                          _~.~-'`)
+	fmt.Println(`  ╚═════╝ ╚══════╝ ╚═╝  ╚═╝  ╚══╝╚══╝         \                    _~.~'`)
+	fmt.Println(` ███╗   ███╗ ██╗ ███╗   ██╗ ███████╗ ██████╗    '-._           _.---'`)
+	fmt.Println(` ████╗ ████║ ██║ ████╗  ██║ ██╔════╝ ██╔══██╗       '----.___---'`)
+	fmt.Println(` ██╔████╔██║ ██║ ██╔██╗ ██║ █████╗   ██████╔╝           |`)
+	fmt.Println(` ██║╚██╔╝██║ ██║ ██║╚██╗██║ ██╔══╝   ██╔══██╗       _.-'~.~--.______________.-'`)
+	fmt.Println(` ██║ ╚═╝ ██║ ██║ ██║ ╚████║ ███████╗ ██║  ██║      / ~.~'              _->`)
+	fmt.Println(` ╚═╝     ╚═╝ ╚═╝ ╚═╝  ╚═══╝ ╚══════╝ ╚═╝  ╚═╝     '-.______________.-'`)
+	fmt.Print(rst)
+	fmt.Printf(dim+"  $402 Proof-of-Indexing Miner  v%s"+rst+"\n", Version)
+	fmt.Println(clr + `  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` + rst)
 
 	// Resolve config path
 	if *cfgPath == "" {
@@ -54,6 +52,31 @@ func main() {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("[main] Failed to load config: %v", err)
+	}
+
+	// --address flag overrides config
+	if *addressFlag != "" {
+		cfg.Wallet.Address = *addressFlag
+	}
+
+	// First-run: no address and no WIF configured → prompt user
+	if cfg.Wallet.Address == "" && cfg.Wallet.Key == "" {
+		fmt.Println()
+		fmt.Println(clr + "  No mining address configured." + rst)
+		fmt.Println("  Enter your BSV address to receive $402 mining rewards.")
+		fmt.Println(dim + "  This must be a P2PKH address (starts with '1') from a wallet you control." + rst)
+		fmt.Println(dim + "  Use an Ordinals-compatible BSV wallet (e.g. yours.org, HandCash, RelayX)." + rst)
+		fmt.Println()
+		fmt.Print("  Address: ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input != "" {
+			cfg.Wallet.Address = input
+			fmt.Printf(dim+"  Mining rewards → %s\n"+rst, input)
+			fmt.Println(dim + "  Tip: set wallet.address in " + *cfgPath + " to skip this prompt." + rst)
+		}
+		fmt.Println()
 	}
 
 	// Ensure data directory exists
