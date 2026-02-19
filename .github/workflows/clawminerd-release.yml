@@ -71,7 +71,7 @@ jobs:
           BINARY="clawminerd-v${{ steps.version.outputs.version }}-${{ matrix.suffix }}${{ matrix.ext }}"
           go build -ldflags "-s -w -X main.Version=${{ steps.version.outputs.version }}" \
             -o "build/${BINARY}" ./cmd/clawminerd/
-          cd build && shasum -a 256 "${BINARY}" > "${BINARY}.sha256"
+          cd build && sha256sum "${BINARY}" > "${BINARY}.sha256" || shasum -a 256 "${BINARY}" > "${BINARY}.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
