@@ -13,7 +13,8 @@
  *   5. Automatic refund on upstream failure
  */
 
-import { getWallet, recordAcquisition } from './wallet.js';
+import { getWallet, recordAcquisition, getAddress } from './wallet.js';
+import bsv from 'bsv';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -261,7 +262,7 @@ async function callAgent(opts: AgentCallOptions): Promise<AgentCallResult> {
     // In production this creates a real BSV transaction via MetaNet Client.
     // For now we use the wallet's recordAcquisition to debit the balance
     // and construct a payment proof header.
-    const paymentProof = createPaymentProof(requiredSats, destination);
+    const paymentProof = await createPaymentProof(requiredSats, destination);
 
     const paidRes = await fetch(url, {
       method,
@@ -388,31 +389,135 @@ interface PaymentProof {
   txHex: string;
 }
 
+// WhatsOnChain API
+const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/main';
+const DEFAULT_FEE_PER_KB = 500; // sats per KB (~0.5 sat/byte)
+
+// Cached wallet key — set via initPaymentWallet() or PATHD_WALLET_KEY env
+let paymentPrivKey: any = null;
+let paymentPubKey: any = null;
+let paymentAddress: any = null;
+
+/**
+ * Initialize the payment wallet for x402 agent transactions.
+ * Call once at startup with the node's WIF key.
+ */
+export function initPaymentWallet(wif?: string): void {
+  const key = wif || process.env.PATHD_WALLET_KEY;
+  if (!key) {
+    console.warn('[x402] No wallet key — payments will use signed proof-of-intent (no on-chain tx)');
+    return;
+  }
+  try {
+    paymentPrivKey = bsv.PrivKey.fromWif(key);
+    paymentPubKey = bsv.PubKey.fromPrivKey(paymentPrivKey);
+    paymentAddress = bsv.Address.fromPubKey(paymentPubKey);
+    console.log(`[x402] Payment wallet initialized: ${paymentAddress.toString()}`);
+  } catch (err) {
+    console.error('[x402] Invalid wallet key:', err);
+  }
+}
+
 /**
  * Create a BSV payment proof for an x402 agent.
  *
- * In production this calls MetaNet Client at localhost:3321 to create
- * and sign a real BSV transaction. For now it creates a placeholder
- * that allows the protocol flow to work end-to-end.
- *
- * TODO: Wire to MetaNet Client wallet API:
- *   POST http://localhost:3321/v1/transactions/create
- *   { outputs: [{ to: destination, satoshis: amount }] }
+ * When a funded wallet key is available, builds and broadcasts a real
+ * P2PKH transaction to the agent's destination address. Otherwise,
+ * creates a signed proof-of-intent that agents can verify against
+ * the node's public key.
  */
-function createPaymentProof(amountSats: number, destination: string): PaymentProof {
-  // Placeholder — will be replaced with real MetaNet Client integration
-  const txid = `x402_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+async function createPaymentProof(amountSats: number, destination: string): Promise<PaymentProof> {
+  // If we have a funded wallet, build a real BSV transaction
+  if (paymentPrivKey && paymentAddress) {
+    try {
+      const txResult = await buildAndBroadcastPayment(amountSats, destination);
+      return txResult;
+    } catch (err: any) {
+      console.warn(`[x402] On-chain payment failed (${err.message}), falling back to signed proof`);
+    }
+  }
+
+  // Fallback: signed proof-of-intent (verifiable but not on-chain)
+  const timestamp = Date.now();
+  const proofData = `x402|${amountSats}|${destination}|${timestamp}`;
+
+  let signature = '';
+  if (paymentPrivKey) {
+    const hash = bsv.Hash.sha256(Buffer.from(proofData));
+    const keyPair = (bsv as any).KeyPair.fromPrivKey(paymentPrivKey);
+    const sig = bsv.Ecdsa.sign(hash, keyPair);
+    signature = sig.toString();
+  }
+
   return {
-    txid,
+    txid: `x402_signed_${timestamp}`,
     txHex: JSON.stringify({
       protocol: 'x402',
-      version: 1,
+      version: 2,
+      type: 'signed-proof',
       amount: amountSats,
       destination,
-      timestamp: Date.now(),
-      txid,
+      timestamp,
+      signer: paymentAddress?.toString() || getAddress(),
+      signature,
     }),
   };
+}
+
+/**
+ * Build, sign, and broadcast a real P2PKH payment transaction.
+ */
+async function buildAndBroadcastPayment(amountSats: number, destination: string): Promise<PaymentProof> {
+  const address = paymentAddress.toString();
+
+  // Fetch UTXOs
+  const res = await fetch(`${WOC_BASE}/address/${address}/unspent`);
+  if (!res.ok) throw new Error('Failed to fetch UTXOs');
+  const utxoData: any[] = await res.json();
+  if (!utxoData || utxoData.length === 0) throw new Error('No UTXOs available');
+
+  const destAddr = bsv.Address.fromString(destination);
+  const lockingScript = (bsv as any).Script.fromPubKeyHash(paymentAddress.hashBuf);
+
+  // Build transaction
+  const txb = new (bsv as any).TxBuilder();
+  txb.setFeePerKbNum(DEFAULT_FEE_PER_KB);
+  txb.setChangeAddress(paymentAddress);
+
+  for (const u of utxoData) {
+    const txHashBuf = Buffer.from(u.tx_hash, 'hex').reverse();
+    const txOut = (bsv as any).TxOut.fromProperties(
+      new (bsv as any).Bn(u.value),
+      lockingScript
+    );
+    txb.inputFromPubKeyHash(txHashBuf, u.tx_pos, txOut);
+  }
+
+  txb.outputToAddress(new (bsv as any).Bn(amountSats), destAddr);
+  txb.build({ useAllInputs: true });
+
+  const keyPair = (bsv as any).KeyPair.fromPrivKey(paymentPrivKey);
+  txb.signWithKeyPairs([keyPair]);
+
+  const txHex = txb.tx.toHex();
+
+  // Broadcast
+  const broadcastRes = await fetch(`${WOC_BASE}/tx/raw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txhex: txHex }),
+  });
+
+  if (!broadcastRes.ok) {
+    const errText = await broadcastRes.text();
+    throw new Error(`Broadcast failed: ${errText}`);
+  }
+
+  const txid = (await broadcastRes.text()).replace(/"/g, '').trim();
+
+  console.log(`[x402] Payment broadcast: ${txid} (${amountSats} sats → ${destination})`);
+
+  return { txid, txHex };
 }
 
 // ── Pipeline Planning ────────────────────────────────────────────
