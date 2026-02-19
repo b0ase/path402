@@ -1,0 +1,129 @@
+name: ClawMinerd Release
+
+on:
+  push:
+    tags:
+      - 'clawminerd-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+            cc: aarch64-linux-gnu-gcc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: apps/clawminer/go.sum
+
+      - name: Install cross-compiler (Linux ARM64)
+        if: matrix.suffix == 'linux-arm64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#clawminerd-v}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        working-directory: apps/clawminer
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CC: ${{ matrix.cc || '' }}
+        run: |
+          BINARY="clawminerd-v${{ steps.version.outputs.version }}-${{ matrix.suffix }}"
+          go build -ldflags "-s -w -X main.Version=${{ steps.version.outputs.version }}" \
+            -o "build/${BINARY}" ./cmd/clawminerd/
+          cd build && shasum -a 256 "${BINARY}" > "${BINARY}.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawminerd-${{ matrix.suffix }}
+          path: apps/clawminer/build/clawminerd-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#clawminerd-v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ClawMinerd v${{ steps.version.outputs.version }}"
+          body: |
+            ## ClawMinerd v${{ steps.version.outputs.version }}
+
+            The $402 Proof-of-Indexing protocol as a single Go binary.
+
+            ### What's included
+            - Gossip network (libp2p + GossipSub, 15 message types, 5 topics)
+            - Proof-of-Indexing mining engine (double-SHA256, configurable difficulty)
+            - Native BSV broadcasting (TAAL ARC) or HTTP bridge
+            - Embedded SQLite database (auto-migrates on first run)
+            - HTTP API on port 8402 (health, status, tokens, portfolio, peers, mining)
+            - BSV wallet (WIF import, key generation, or public address only)
+
+            ### Download
+
+            | Platform | Binary |
+            |----------|--------|
+            | macOS (Apple Silicon) | `clawminerd-v${{ steps.version.outputs.version }}-darwin-arm64` |
+            | macOS (Intel) | `clawminerd-v${{ steps.version.outputs.version }}-darwin-amd64` |
+            | Linux (x86_64) | `clawminerd-v${{ steps.version.outputs.version }}-linux-amd64` |
+            | Linux (ARM64) | `clawminerd-v${{ steps.version.outputs.version }}-linux-arm64` |
+
+            ### Quick start
+            ```bash
+            chmod +x clawminerd-*
+            ./clawminerd-v${{ steps.version.outputs.version }}-<platform>
+            ```
+
+            The daemon creates `~/.clawminer/`, opens SQLite, starts gossip on :4020, and begins mining.
+            Check status: `curl localhost:8402/health`
+
+            ### Verify checksums
+            ```bash
+            shasum -a 256 -c clawminerd-*.sha256
+            ```
+          files: dist/*
+          draft: false
+          prerelease: false
