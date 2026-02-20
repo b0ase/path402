@@ -13,8 +13,9 @@ api:
   bind: "127.0.0.1"
 
 wallet:
-  key: ""                      # WIF private key (or CLAWMINER_WALLET_KEY env)
-  address: "1HNcvDZNosbxWeB9grD769u3bAKYNKRHTs"  # Public address for mining rewards (or CLAWMINER_WALLET_ADDRESS env)
+  key: ""                      # WIF funding key for native broadcasting (or CLAWMINER_WALLET_KEY env)
+  address: ""                  # BSV address for mining rewards (or CLAWMINER_WALLET_ADDRESS env)
+                               # If both key and address are set, key funds txs, address gets rewards
 
 mining:
   enabled: true
@@ -23,10 +24,17 @@ mining:
   min_items: 5
   batch_size: 10
   token_id: ""                 # HTM contract txid (or HTM_TOKEN_ID env)
-  broadcast_mode: "none"       # "native" (BSV tx via ARC), "http" (external service), "none"
+  broadcast_mode: "native"     # "native" (BSV tx via ARC), "http" (external service), "none"
   arc_url: ""                  # ARC broadcaster URL (default: https://arc.taal.com)
   arc_api_key: ""              # ARC API key (optional, or CLAWMINER_ARC_API_KEY env)
   mint_endpoint: ""            # HTTP mint service URL for broadcast_mode=http
+
+headers:
+  bhs_url: ""                  # Block Headers Service URL (or CLAWMINER_BHS_URL env)
+  bhs_api_key: ""              # BHS API key (or CLAWMINER_BHS_API_KEY env)
+  sync_on_boot: true
+  poll_interval: 30s
+  batch_size: 2000
 
 log:
   level: info                  # debug, info, warn, error

@@ -15,6 +15,8 @@ type DaemonInfo interface {
 	Uptime() time.Duration
 	PeerCount() int
 	MiningStatus() map[string]interface{}
+	HeaderSyncStatus() map[string]interface{}
+	ValidateMerkleRoot(root string, height int) (bool, error)
 }
 
 // Server is the HTTP JSON API for the ClawMiner daemon.

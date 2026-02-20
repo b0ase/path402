@@ -4,7 +4,7 @@ BUILD_DIR  := ./build
 LDFLAGS    := -ldflags "-s -w -X main.Version=$(VERSION)"
 CGO        := CGO_ENABLED=1
 
-.PHONY: all build clean test run release checksums
+.PHONY: all build clean test run release checksums install-gomobile bind-android
 
 all: build
 
@@ -48,6 +48,20 @@ run: build
 
 test:
 	$(CGO) go test ./...
+
+install-gomobile:
+	go install golang.org/x/mobile/cmd/gomobile@latest
+	go install golang.org/x/mobile/cmd/gobind@latest
+	gomobile init
+
+bind-android:
+	@mkdir -p android
+	$(CGO) gomobile bind \
+		-target=android/arm64 \
+		-androidapi 21 \
+		-ldflags "-s -w" \
+		-o android/clawminer.aar \
+		./mobile/
 
 clean:
 	rm -rf $(BUILD_DIR)

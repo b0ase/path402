@@ -37,18 +37,27 @@ type MiningConfig struct {
 	BroadcastMode     string        `yaml:"broadcast_mode"`  // "native", "http", or "none"
 }
 
+type HeadersConfig struct {
+	BHSURL       string        `yaml:"bhs_url"`
+	BHSAPIKey    string        `yaml:"bhs_api_key"`
+	SyncOnBoot   bool          `yaml:"sync_on_boot"`
+	PollInterval time.Duration `yaml:"poll_interval"`
+	BatchSize    int           `yaml:"batch_size"`
+}
+
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
 }
 
 type Config struct {
-	DataDir string       `yaml:"data_dir"`
-	Gossip  GossipConfig `yaml:"gossip"`
-	API     APIConfig    `yaml:"api"`
-	Wallet  WalletConfig `yaml:"wallet"`
-	Mining  MiningConfig `yaml:"mining"`
-	Log     LogConfig    `yaml:"log"`
+	DataDir string        `yaml:"data_dir"`
+	Gossip  GossipConfig  `yaml:"gossip"`
+	API     APIConfig     `yaml:"api"`
+	Wallet  WalletConfig  `yaml:"wallet"`
+	Mining  MiningConfig  `yaml:"mining"`
+	Headers HeadersConfig `yaml:"headers"`
+	Log     LogConfig     `yaml:"log"`
 }
 
 func DefaultConfig() *Config {
@@ -73,6 +82,16 @@ func DefaultConfig() *Config {
 			HeartbeatInterval: 15 * time.Second,
 			MinItems:          5,
 			BatchSize:         10,
+			TokenID:           "32ae25f861192f286bdbaf28f50b8ac1cd5ec4ff0b23a9831fa821acf91e5d02_0",
+			BroadcastMode:     "native",
+			ArcURL:            "https://arc.taal.com",
+		},
+		Headers: HeadersConfig{
+			BHSURL:       "http://135.181.103.181:8090",
+			BHSAPIKey:    "clawminer-bhs-2026",
+			SyncOnBoot:   true,
+			PollInterval: 30 * time.Second,
+			BatchSize:    2000,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -132,6 +151,25 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("CLAWMINER_ARC_API_KEY"); v != "" {
 		c.Mining.ArcAPIKey = v
 	}
+	if v := os.Getenv("CLAWMINER_BHS_URL"); v != "" {
+		c.Headers.BHSURL = v
+	}
+	if v := os.Getenv("CLAWMINER_BHS_API_KEY"); v != "" {
+		c.Headers.BHSAPIKey = v
+	}
+}
+
+// LoadFromBytes parses YAML config from bytes and merges with defaults.
+// Used by the mobile package where there's no config file on disk.
+func LoadFromBytes(data []byte) (*Config, error) {
+	cfg := DefaultConfig()
+	if len(data) > 0 {
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, err
+		}
+	}
+	cfg.applyEnv()
+	return cfg, nil
 }
 
 // DBPath returns the full path to the SQLite database file.

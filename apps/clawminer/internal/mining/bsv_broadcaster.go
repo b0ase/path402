@@ -19,7 +19,8 @@ import (
 // commitment (merkle root) on-chain, then broadcasts via ARC.
 type BSVBroadcaster struct {
 	privKey      *ec.PrivateKey
-	address      *script.Address
+	address      *script.Address // funding address (derived from privKey)
+	minerAddress string          // reward attribution address (may differ from funding)
 	arcURL       string
 	arcAPIKey    string
 	tokenID      string
@@ -41,11 +42,12 @@ type UTXOProvider interface {
 
 // BSVBroadcasterConfig holds configuration for the native broadcaster.
 type BSVBroadcasterConfig struct {
-	PrivateKey *ec.PrivateKey
-	ArcURL     string // e.g. "https://arc.taal.com"
-	ArcAPIKey  string // optional
-	TokenID    string // HTM contract txid
-	UTXOs      UTXOProvider
+	PrivateKey   *ec.PrivateKey
+	MinerAddress string // reward attribution address (if empty, uses key's address)
+	ArcURL       string // e.g. "https://arc.taal.com"
+	ArcAPIKey    string // optional
+	TokenID      string // HTM contract txid
+	UTXOs        UTXOProvider
 }
 
 // NewBSVBroadcaster creates a native BSV transaction broadcaster.
@@ -60,9 +62,15 @@ func NewBSVBroadcaster(cfg BSVBroadcasterConfig) (*BSVBroadcaster, error) {
 		arcURL = "https://arc.taal.com"
 	}
 
+	minerAddr := cfg.MinerAddress
+	if minerAddr == "" {
+		minerAddr = addr.AddressString
+	}
+
 	return &BSVBroadcaster{
 		privKey:      cfg.PrivateKey,
 		address:      addr,
+		minerAddress: minerAddr,
 		arcURL:       arcURL,
 		arcAPIKey:    cfg.ArcAPIKey,
 		tokenID:      cfg.TokenID,
@@ -121,7 +129,7 @@ func (b *BSVBroadcaster) BroadcastMint(merkleRoot string) (*MintBroadcasterResul
 		[]byte("poi"),                     // Proof of Indexing
 		[]byte(b.tokenID),                 // Token ID
 		merkleBytes,                       // Work commitment (merkle root)
-		[]byte(b.address.AddressString),   // Miner address
+		[]byte(b.minerAddress),            // Miner address (reward attribution)
 	}); err != nil {
 		return nil, fmt.Errorf("append push data: %w", err)
 	}

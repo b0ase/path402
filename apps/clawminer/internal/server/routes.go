@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/db"
@@ -14,6 +15,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/portfolio", s.handlePortfolio)
 	mux.HandleFunc("GET /api/peers", s.handlePeers)
 	mux.HandleFunc("GET /api/mining/status", s.handleMiningStatus)
+	mux.HandleFunc("GET /api/headers/status", s.handleHeadersStatus)
+	mux.HandleFunc("GET /api/headers/tip", s.handleHeadersTip)
+	mux.HandleFunc("GET /api/headers/verify", s.handleHeadersVerify)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
@@ -61,7 +65,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"tokens": map[string]int{
 			"known": tokenCount,
 		},
-		"mining": s.daemon.MiningStatus(),
+		"mining":  s.daemon.MiningStatus(),
+		"headers": s.daemon.HeaderSyncStatus(),
 	}
 
 	if portfolio != nil {
@@ -115,4 +120,43 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMiningStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.daemon.MiningStatus())
+}
+
+func (s *Server) handleHeadersStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.daemon.HeaderSyncStatus())
+}
+
+func (s *Server) handleHeadersTip(w http.ResponseWriter, r *http.Request) {
+	status := s.daemon.HeaderSyncStatus()
+	writeJSON(w, map[string]interface{}{
+		"highest_height": status["highest_height"],
+		"chain_tip":      status["chain_tip"],
+	})
+}
+
+func (s *Server) handleHeadersVerify(w http.ResponseWriter, r *http.Request) {
+	root := r.URL.Query().Get("root")
+	heightStr := r.URL.Query().Get("height")
+	if root == "" || heightStr == "" {
+		writeError(w, 400, "root and height query params required")
+		return
+	}
+
+	var height int
+	if _, err := fmt.Sscanf(heightStr, "%d", &height); err != nil {
+		writeError(w, 400, "height must be an integer")
+		return
+	}
+
+	valid, err := s.daemon.ValidateMerkleRoot(root, height)
+	if err != nil {
+		writeError(w, 503, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"root":   root,
+		"height": height,
+		"valid":  valid,
+	})
 }

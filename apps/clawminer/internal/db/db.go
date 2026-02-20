@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"log"
 	"sync"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed schema.sql
@@ -27,7 +25,7 @@ func Open(path string) error {
 	}
 
 	var err error
-	db, err = sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=ON")
+	db, err = sql.Open(driverName, path+"?_journal_mode=WAL&_foreign_keys=ON")
 	if err != nil {
 		return err
 	}

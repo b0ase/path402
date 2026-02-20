@@ -9,6 +9,7 @@ import (
 	"github.com/b0ase/path402/apps/clawminer/internal/config"
 	"github.com/b0ase/path402/apps/clawminer/internal/db"
 	"github.com/b0ase/path402/apps/clawminer/internal/gossip"
+	"github.com/b0ase/path402/apps/clawminer/internal/headers"
 	"github.com/b0ase/path402/apps/clawminer/internal/mining"
 	"github.com/b0ase/path402/apps/clawminer/internal/server"
 	"github.com/b0ase/path402/apps/clawminer/internal/wallet"
@@ -23,6 +24,7 @@ type Daemon struct {
 	wallet     *wallet.Wallet
 	gossipNode *gossip.Node
 	miner      *mining.ProofOfIndexingService
+	headerSync *headers.SyncService
 	httpSrv    *server.Server
 	stopCh     chan struct{}
 }
@@ -49,11 +51,11 @@ func (d *Daemon) Start() error {
 	d.nodeID = nodeID
 	log.Printf("[daemon] Node ID: %s", nodeID[:16])
 
-	// 3. Load wallet — 4-tier priority:
-	//    1. WIF from config/env → full wallet with signing
-	//    2. Address from config/env → address-only, no signing
-	//    3. DB-saved WIF from previous auto-gen → full wallet
-	//    4. Auto-generate new keypair → save WIF to DB
+	// 3. Load wallet
+	//    WIF (config/env) → signing key for native broadcasting
+	//    Address (config/env) → reward attribution (overrides key's derived address)
+	//    DB-saved WIF → signing key from previous auto-gen
+	//    Auto-generate → new keypair, saved to DB
 	minerAddr := ""
 	if d.cfg.Wallet.Key != "" {
 		w, err := wallet.Load(d.cfg.Wallet.Key)
@@ -62,12 +64,17 @@ func (d *Daemon) Start() error {
 		} else {
 			d.wallet = w
 			minerAddr = w.Address
-			log.Printf("[wallet] Loaded from config WIF, address: %s", minerAddr)
+			log.Printf("[wallet] Loaded signing key (funding address: %s)", w.Address)
 		}
 	}
-	if minerAddr == "" && d.cfg.Wallet.Address != "" {
+	// Configured address overrides key's derived address for reward attribution
+	if d.cfg.Wallet.Address != "" {
+		if minerAddr != "" && minerAddr != d.cfg.Wallet.Address {
+			log.Printf("[wallet] Mining rewards → %s (funding via %s)", d.cfg.Wallet.Address, minerAddr)
+		} else {
+			log.Printf("[wallet] Mining rewards → %s", d.cfg.Wallet.Address)
+		}
 		minerAddr = d.cfg.Wallet.Address
-		log.Printf("[wallet] Mining rewards → %s", minerAddr)
 	}
 	if minerAddr == "" {
 		// Try loading a previously saved WIF from DB
@@ -94,6 +101,21 @@ func (d *Daemon) Start() error {
 		d.wallet = w
 		minerAddr = w.Address
 		log.Printf("[wallet] Generated and saved new wallet: %s", minerAddr)
+	}
+
+	// 3.5 Start header sync service
+	headerStore := headers.NewHeaderStore()
+	if err := headerStore.EnsureSchema(); err != nil {
+		log.Printf("[headers] WARNING: Schema init failed: %v", err)
+	} else {
+		d.headerSync = headers.NewSyncService(headers.SyncConfig{
+			BHSURL:       d.cfg.Headers.BHSURL,
+			BHSAPIKey:    d.cfg.Headers.BHSAPIKey,
+			SyncOnBoot:   d.cfg.Headers.SyncOnBoot,
+			PollInterval: d.cfg.Headers.PollInterval,
+			BatchSize:    d.cfg.Headers.BatchSize,
+		}, headerStore)
+		d.headerSync.Start()
 	}
 
 	// 4. Start gossip node (with persistent identity)
@@ -134,11 +156,12 @@ func (d *Daemon) Start() error {
 		case "native":
 			if d.wallet != nil && d.cfg.Mining.TokenID != "" {
 				bsvBroadcaster, err := mining.NewBSVBroadcaster(mining.BSVBroadcasterConfig{
-					PrivateKey: d.wallet.PrivateKey,
-					ArcURL:     d.cfg.Mining.ArcURL,
-					ArcAPIKey:  d.cfg.Mining.ArcAPIKey,
-					TokenID:    d.cfg.Mining.TokenID,
-					UTXOs:      mining.NewWocUTXOProvider(),
+					PrivateKey:   d.wallet.PrivateKey,
+					MinerAddress: minerAddr,
+					ArcURL:       d.cfg.Mining.ArcURL,
+					ArcAPIKey:    d.cfg.Mining.ArcAPIKey,
+					TokenID:      d.cfg.Mining.TokenID,
+					UTXOs:        mining.NewWocUTXOProvider(),
 				})
 				if err != nil {
 					log.Printf("[daemon] Native broadcaster failed to init: %v (falling back to noop)", err)
@@ -242,6 +265,9 @@ func (d *Daemon) Stop() {
 	if d.gossipNode != nil {
 		d.gossipNode.Stop()
 	}
+	if d.headerSync != nil {
+		d.headerSync.Stop()
+	}
 	db.Close()
 
 	log.Println("[daemon] Shutdown complete")
@@ -264,6 +290,28 @@ func (d *Daemon) MiningStatus() map[string]interface{} {
 		return d.miner.Status()
 	}
 	return map[string]interface{}{"enabled": false}
+}
+
+func (d *Daemon) HeaderSyncStatus() map[string]interface{} {
+	if d.headerSync == nil {
+		return map[string]interface{}{"enabled": false}
+	}
+	p := d.headerSync.Progress()
+	return map[string]interface{}{
+		"enabled":        true,
+		"is_syncing":     p.IsSyncing,
+		"total_headers":  p.TotalHeaders,
+		"highest_height": p.HighestHeight,
+		"chain_tip":      p.ChainTipHeight,
+		"last_synced_at": p.LastSyncedAt,
+	}
+}
+
+func (d *Daemon) ValidateMerkleRoot(root string, height int) (bool, error) {
+	if d.headerSync == nil {
+		return false, fmt.Errorf("header sync not enabled")
+	}
+	return d.headerSync.ValidateMerkleRoot(root, height)
 }
 
 // loadOrCreateLibp2pIdentity loads a persisted Ed25519 key from the DB,
