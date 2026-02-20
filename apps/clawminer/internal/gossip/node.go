@@ -7,13 +7,16 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	drouting "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -22,8 +25,10 @@ type Node struct {
 	nodeID      string
 	port        int
 	maxPeers    int
+	enableDHT   bool
 	identityKey libp2pcrypto.PrivKey
 	host        host.Host
+	dht         *dht.IpfsDHT
 	ps          *pubsub.PubSub
 	topics      map[string]*pubsub.Topic
 	subs        map[string]*pubsub.Subscription
@@ -40,12 +45,14 @@ type MessageHandler func(msg *GossipMessage)
 
 // NewNode creates a gossip node backed by libp2p + GossipSub.
 // identityKey is optional — if non-nil, it provides a stable libp2p peer ID across restarts.
-func NewNode(nodeID string, port, maxPeers int, identityKey libp2pcrypto.PrivKey) *Node {
+// enableDHT activates Kademlia DHT for peer discovery beyond the local network.
+func NewNode(nodeID string, port, maxPeers int, identityKey libp2pcrypto.PrivKey, enableDHT bool) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Node{
 		nodeID:      nodeID,
 		port:        port,
 		maxPeers:    maxPeers,
+		enableDHT:   enableDHT,
 		identityKey: identityKey,
 		topics:      make(map[string]*pubsub.Topic),
 		subs:        make(map[string]*pubsub.Subscription),
@@ -86,8 +93,25 @@ func (n *Node) Start() error {
 		log.Printf("[gossip] Listening on %s/p2p/%s", addr, h.ID())
 	}
 
-	// Create GossipSub
-	ps, err := pubsub.NewGossipSub(n.ctx, h)
+	// Initialize Kademlia DHT for peer routing/discovery
+	var gossipOpts []pubsub.Option
+	if n.enableDHT {
+		kadDHT, err := dht.New(n.ctx, h, dht.Mode(dht.ModeAutoServer))
+		if err != nil {
+			return fmt.Errorf("dht new: %w", err)
+		}
+		if err := kadDHT.Bootstrap(n.ctx); err != nil {
+			return fmt.Errorf("dht bootstrap: %w", err)
+		}
+		n.dht = kadDHT
+
+		routingDisc := drouting.NewRoutingDiscovery(kadDHT)
+		gossipOpts = append(gossipOpts, pubsub.WithDiscovery(routingDisc))
+		log.Println("[gossip] Kademlia DHT enabled (mode: auto-server)")
+	}
+
+	// Create GossipSub (with DHT discovery if enabled)
+	ps, err := pubsub.NewGossipSub(n.ctx, h, gossipOpts...)
 	if err != nil {
 		return fmt.Errorf("gossipsub: %w", err)
 	}
@@ -129,6 +153,9 @@ func (n *Node) Stop() {
 	}
 	for _, topic := range n.topics {
 		topic.Close()
+	}
+	if n.dht != nil {
+		n.dht.Close()
 	}
 	if n.host != nil {
 		n.host.Close()
@@ -261,6 +288,35 @@ func (n *Node) readLoop(topicName string, sub *pubsub.Subscription) {
 		if n.handler != nil {
 			n.handler(&msg)
 		}
+	}
+}
+
+// BootstrapDHT connects to the given multiaddr peers and adds them to the
+// DHT routing table. Call this after Start() with the configured bootstrap list.
+func (n *Node) BootstrapDHT(peers []string) {
+	if n.dht == nil || n.host == nil {
+		return
+	}
+	for _, addr := range peers {
+		ma, err := multiaddr.NewMultiaddr(addr)
+		if err != nil {
+			log.Printf("[gossip] Bad bootstrap multiaddr %q: %v", addr, err)
+			continue
+		}
+		pi, err := peer.AddrInfoFromP2pAddr(ma)
+		if err != nil {
+			log.Printf("[gossip] Bootstrap addr %q missing peer ID: %v", addr, err)
+			continue
+		}
+		go func(pi peer.AddrInfo) {
+			ctx, cancel := context.WithTimeout(n.ctx, 15*time.Second)
+			defer cancel()
+			if err := n.host.Connect(ctx, pi); err != nil {
+				log.Printf("[gossip] Bootstrap peer %s connect failed: %v", pi.ID.String()[:16], err)
+				return
+			}
+			log.Printf("[gossip] Connected to bootstrap peer %s", pi.ID.String()[:16])
+		}(*pi)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 	"github.com/b0ase/path402/apps/clawminer/internal/daemon"
 )
 
-var Version = "0.1.3"
+var Version = "0.2.0"
 
 func main() {
 	cfgPath := flag.String("config", "", "path to clawminer.yaml")

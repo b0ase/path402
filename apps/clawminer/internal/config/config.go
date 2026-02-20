@@ -12,6 +12,7 @@ type GossipConfig struct {
 	Port           int      `yaml:"port"`
 	BootstrapPeers []string `yaml:"bootstrap_peers"`
 	MaxPeers       int      `yaml:"max_peers"`
+	EnableDHT      bool     `yaml:"enable_dht"`
 }
 
 type APIConfig struct {
@@ -65,9 +66,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		DataDir: filepath.Join(home, ".clawminer"),
 		Gossip: GossipConfig{
-			Port:           4020,
-			BootstrapPeers: []string{},
-			MaxPeers:       50,
+			Port: 4020,
+			BootstrapPeers: []string{
+				"/ip4/135.181.103.181/tcp/4020/p2p/12D3KooWQ4jTKQZaQFksTBuBNSZ6jTGDvWurLYvKzsQv1K7uxcLi",
+			},
+			MaxPeers:  50,
+			EnableDHT: true,
 		},
 		API: APIConfig{
 			Port: 8402,

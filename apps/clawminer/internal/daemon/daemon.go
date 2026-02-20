@@ -123,7 +123,7 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		log.Printf("[gossip] WARNING: Failed to load/create identity: %v (using ephemeral)", err)
 	}
-	d.gossipNode = gossip.NewNode(d.nodeID, d.cfg.Gossip.Port, d.cfg.Gossip.MaxPeers, identityKey)
+	d.gossipNode = gossip.NewNode(d.nodeID, d.cfg.Gossip.Port, d.cfg.Gossip.MaxPeers, identityKey, d.cfg.Gossip.EnableDHT)
 
 	handler := gossip.NewHandler(d.nodeID)
 	d.gossipNode.SetHandler(handler.HandleMessage)
@@ -132,13 +132,9 @@ func (d *Daemon) Start() error {
 		return fmt.Errorf("gossip start: %w", err)
 	}
 
-	// Connect to bootstrap peers
-	for _, peer := range d.cfg.Gossip.BootstrapPeers {
-		go func(addr string) {
-			if err := d.gossipNode.ConnectToPeer(addr, d.cfg.Gossip.Port); err != nil {
-				log.Printf("[daemon] Bootstrap peer %s failed: %v", addr, err)
-			}
-		}(peer)
+	// Connect to bootstrap peers via DHT routing table
+	if len(d.cfg.Gossip.BootstrapPeers) > 0 {
+		d.gossipNode.BootstrapDHT(d.cfg.Gossip.BootstrapPeers)
 	}
 
 	// 5. Start mining service
@@ -305,6 +301,52 @@ func (d *Daemon) HeaderSyncStatus() map[string]interface{} {
 		"chain_tip":      p.ChainTipHeight,
 		"last_synced_at": p.LastSyncedAt,
 	}
+}
+
+func (d *Daemon) WalletStatus() map[string]interface{} {
+	result := map[string]interface{}{}
+	if d.wallet != nil {
+		result["address"] = d.wallet.Address
+		result["public_key"] = hex.EncodeToString(d.wallet.PublicKey)
+	}
+	return result
+}
+
+// ImportWallet replaces the current wallet with one loaded from the given WIF.
+// The new wallet is hot-swapped without requiring a daemon restart.
+func (d *Daemon) ImportWallet(wif string) error {
+	w, err := wallet.Load(wif)
+	if err != nil {
+		return fmt.Errorf("invalid WIF: %w", err)
+	}
+	if err := db.SetConfig("wallet_wif", wif); err != nil {
+		return fmt.Errorf("persist wallet: %w", err)
+	}
+	d.wallet = w
+	log.Printf("[wallet] Imported wallet: %s", w.Address)
+	return nil
+}
+
+// ExportWIF returns the current wallet's WIF string.
+func (d *Daemon) ExportWIF() (string, error) {
+	if d.wallet == nil {
+		return "", fmt.Errorf("no wallet loaded")
+	}
+	return d.wallet.WIF, nil
+}
+
+// GenerateNewWallet creates a fresh keypair, persists it, and hot-swaps.
+func (d *Daemon) GenerateNewWallet() error {
+	w, err := wallet.Generate()
+	if err != nil {
+		return fmt.Errorf("generate wallet: %w", err)
+	}
+	if err := db.SetConfig("wallet_wif", w.WIF); err != nil {
+		return fmt.Errorf("persist wallet: %w", err)
+	}
+	d.wallet = w
+	log.Printf("[wallet] Generated new wallet: %s", w.Address)
+	return nil
 }
 
 func (d *Daemon) ValidateMerkleRoot(root string, height int) (bool, error) {

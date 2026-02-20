@@ -15,6 +15,8 @@ import { yamux } from '@libp2p/yamux';
 import { gossipsub } from '@libp2p/gossipsub';
 import { bootstrap } from '@libp2p/bootstrap';
 import { identify } from '@libp2p/identify';
+import { kadDHT } from '@libp2p/kad-dht';
+import { mdns } from '@libp2p/mdns';
 import { multiaddr } from '@multiformats/multiaddr';
 import { createEd25519PeerId } from '@libp2p/peer-id-factory';
 import { peerIdFromString } from '@libp2p/peer-id';
@@ -72,6 +74,9 @@ const TOPICS = {
 
 const CALL_PROTOCOL = '/path402/call/1.0.0';
 
+// Default bootstrap peer (Hetzner DHT relay)
+const DEFAULT_BOOTSTRAP_PEER = '/ip4/135.181.103.181/tcp/4020/p2p/12D3KooWQ4jTKQZaQFksTBuBNSZ6jTGDvWurLYvKzsQv1K7uxcLi';
+
 // ── Gossip Node ────────────────────────────────────────────────────
 
 export class GossipNode extends EventEmitter {
@@ -98,12 +103,18 @@ export class GossipNode extends EventEmitter {
 
     console.log(`[GossipNode] Initializing libp2p node ${this.nodeId.slice(0, 8)}...`);
 
+    // Merge default bootstrap peer with user-configured peers
+    const allPeers = [...this.config.bootstrapPeers];
+    if (!allPeers.includes(DEFAULT_BOOTSTRAP_PEER)) {
+      allPeers.push(DEFAULT_BOOTSTRAP_PEER);
+    }
+
     // Separate full multiaddrs (contain /p2p/) from bare host:port peers
     // Only full multiaddrs can be used for bootstrap discovery
     const fullMultiaddrs: string[] = [];
     const manualPeers: string[] = [];
 
-    for (const addr of this.config.bootstrapPeers) {
+    for (const addr of allPeers) {
       if (addr.startsWith('/') && addr.includes('/p2p/')) {
         fullMultiaddrs.push(addr);
       } else {
@@ -123,6 +134,9 @@ export class GossipNode extends EventEmitter {
         identify: identify({
           protocolPrefix: '402-p2p'
         } as any) as any,
+        dht: kadDHT({
+          clientMode: false
+        }) as any,
         pubsub: gossipsub({
           allowPublishToZeroTopicPeers: true,
           fallbackToFloodsub: true,
@@ -139,12 +153,15 @@ export class GossipNode extends EventEmitter {
         version: '3.0.0',
         userAgent: 'path402/3.0.0'
       },
-      // Peer discovery via bootstrap (only full multiaddrs with peer IDs)
-      peerDiscovery: fullMultiaddrs.length > 0 ? [
-        bootstrap({
-          list: fullMultiaddrs
-        }) as any
-      ] : []
+      // Peer discovery via bootstrap + mDNS for LAN
+      peerDiscovery: [
+        ...(fullMultiaddrs.length > 0 ? [
+          bootstrap({
+            list: fullMultiaddrs
+          }) as any
+        ] : []),
+        mdns() as any
+      ]
     } as any);
 
     // Setup event handlers

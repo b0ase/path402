@@ -5,8 +5,10 @@ data_dir: ~/.clawminer
 
 gossip:
   port: 4020
-  bootstrap_peers: []
+  bootstrap_peers:
+    - "/ip4/135.181.103.181/tcp/4020/p2p/12D3KooWQ4jTKQZaQFksTBuBNSZ6jTGDvWurLYvKzsQv1K7uxcLi"
   max_peers: 50
+  enable_dht: true                # Kademlia DHT for peer discovery beyond LAN
 
 api:
   port: 8402

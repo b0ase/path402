@@ -1,10 +1,10 @@
 BINARY     := clawminerd
-VERSION    := 0.1.0
+VERSION    := 0.2.0
 BUILD_DIR  := ./build
 LDFLAGS    := -ldflags "-s -w -X main.Version=$(VERSION)"
 CGO        := CGO_ENABLED=1
 
-.PHONY: all build clean test run release checksums install-gomobile bind-android
+.PHONY: all build clean test run release checksums install-gomobile bind-android bind-ios
 
 all: build
 
@@ -61,6 +61,15 @@ bind-android:
 		-androidapi 21 \
 		-ldflags "-s -w" \
 		-o android/clawminer.aar \
+		./mobile/
+
+bind-ios:
+	@mkdir -p ios
+	$(CGO) gomobile bind \
+		-target=ios/arm64 \
+		-iosversion 15.0 \
+		-ldflags "-s -w" \
+		-o ios/Clawminer.xcframework \
 		./mobile/
 
 clean:
