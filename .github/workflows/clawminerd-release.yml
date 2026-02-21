@@ -114,11 +114,13 @@ jobs:
             - BSV wallet (WIF import, key generation, or public address only)
             - `--address` flag and first-run interactive prompt
 
-            ### Changes since v0.1.0
-            - **Wallet persistence** — auto-generated wallets are saved to DB and reused across restarts (no more lost keys)
-            - **Configurable mining address** — set `wallet.address` in config, use `--address` flag, or enter at first-run prompt
-            - **Persistent libp2p identity** — stable peer ID across restarts, eliminates mDNS stale-peer noise
-            - **Port conflict handling** — if port 8402 is in use, automatically falls back to 8403
+            ### Changes
+            - **Transparent wallet prompt** — on startup, clearly shows where mining rewards go and lets you enter your own address or knowingly donate to the project
+            - **Kademlia DHT** — global peer discovery (v0.2.0)
+            - **Native BSV broadcasting** — direct TAAL ARC integration (v0.1.3)
+            - **Wallet persistence** — auto-generated wallets saved to DB, reused across restarts
+            - **Persistent libp2p identity** — stable peer ID across restarts
+            - **Port conflict handling** — automatic fallback if 8402 is in use
 
             ### Download
 
