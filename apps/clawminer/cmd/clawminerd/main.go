@@ -59,13 +59,26 @@ func main() {
 		cfg.Wallet.Address = *addressFlag
 	}
 
-	// First-run: no address and no WIF configured → prompt user
-	if cfg.Wallet.Address == "" && cfg.Wallet.Key == "" {
+	// Wallet address prompt — always show unless user provided --address or env/config override
+	defaultAddr := "1HNcvDZNosbxWeB9grD769u3bAKYNKRHTs"
+	userProvidedAddress := *addressFlag != "" || os.Getenv("CLAWMINER_WALLET_ADDRESS") != ""
+
+	if !userProvidedAddress && cfg.Wallet.Key == "" {
 		fmt.Println()
-		fmt.Println(clr + "  No mining address configured." + rst)
-		fmt.Println("  Enter your BSV address to receive $402 mining rewards.")
-		fmt.Println(dim + "  This must be a P2PKH address (starts with '1') from a wallet you control." + rst)
-		fmt.Println(dim + "  Use an Ordinals-compatible BSV wallet (e.g. yours.org, HandCash, RelayX)." + rst)
+		if cfg.Wallet.Address == defaultAddr {
+			fmt.Println(clr + "  Mining rewards address" + rst)
+			fmt.Println("  Rewards currently go to the path402 project address:")
+			fmt.Println("  " + dim + defaultAddr + rst)
+			fmt.Println()
+			fmt.Println("  Enter YOUR BSV address to receive rewards yourself,")
+			fmt.Println("  or press Enter to donate rewards to the path402 project.")
+			fmt.Println(dim + "  Must be P2PKH (starts with '1') from an Ordinals-compatible wallet (e.g. yours.org)." + rst)
+		} else {
+			fmt.Println(clr + "  Mining rewards address" + rst)
+			fmt.Printf("  Currently set to: %s\n", cfg.Wallet.Address)
+			fmt.Println("  Enter a new BSV address, or press Enter to keep it.")
+			fmt.Println(dim + "  Must be P2PKH (starts with '1') from an Ordinals-compatible wallet (e.g. yours.org)." + rst)
+		}
 		fmt.Println()
 		fmt.Print("  Address: ")
 		reader := bufio.NewReader(os.Stdin)
@@ -73,8 +86,10 @@ func main() {
 		input = strings.TrimSpace(input)
 		if input != "" {
 			cfg.Wallet.Address = input
-			fmt.Printf(dim+"  Mining rewards → %s\n"+rst, input)
+			fmt.Printf("\n"+dim+"  Mining rewards → %s\n"+rst, input)
 			fmt.Println(dim + "  Tip: set wallet.address in " + *cfgPath + " to skip this prompt." + rst)
+		} else if cfg.Wallet.Address == defaultAddr {
+			fmt.Println(dim + "  Donating rewards to path402 project. Thank you!" + rst)
 		}
 		fmt.Println()
 	}
