@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"time"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/config"
@@ -147,6 +149,150 @@ func (d *Daemon) Start() error {
 			BatchSize:         d.cfg.Mining.BatchSize,
 		})
 
+		// Initialize difficulty adjuster (Bitcoin-style)
+		adjustmentPeriod := d.cfg.Mining.AdjustmentPeriod
+		if adjustmentPeriod < 1 {
+			adjustmentPeriod = 144
+		}
+		targetBlockTime := d.cfg.Mining.TargetBlockTime
+		if targetBlockTime <= 0 {
+			targetBlockTime = 10 * time.Minute
+		}
+		da := mining.NewDifficultyAdjuster(d.cfg.Mining.Difficulty, adjustmentPeriod, targetBlockTime)
+		d.miner.SetDifficultyAdjuster(da)
+		log.Printf("[daemon] Difficulty adjuster: target %v blocks, adjust every %d blocks",
+			targetBlockTime, adjustmentPeriod)
+
+		// Restore chain state from database
+		if tipHash, tipHeight, err := db.GetChainTip(); err == nil {
+			d.miner.SetLastBlockHash(tipHash)
+			ownCount, _ := db.GetOwnBlockCount()
+			d.miner.SetBlocksMined(ownCount)
+
+			// Restore difficulty target
+			if savedTarget, err := db.GetConfig("difficulty_target"); err == nil && savedTarget != "" {
+				target := new(big.Int)
+				if _, ok := target.SetString(savedTarget, 16); ok {
+					// Restore full adjuster state with recent timestamps
+					totalCount, _ := db.GetPoIBlockCount()
+					timestamps, _ := db.GetBlockTimestampsSince(time.Now().Add(-time.Duration(adjustmentPeriod) * targetBlockTime))
+					da.RestoreState(target, int64(totalCount), timestamps)
+				}
+			}
+
+			log.Printf("[daemon] Restored chain: height=%d, tip=%s, own_blocks=%d, difficulty=%d",
+				tipHeight, tipHash[:min(16, len(tipHash))], ownCount, da.Difficulty())
+		}
+
+		// Wire block storage: mined blocks → database
+		d.miner.SetBlockStorage(func(block *mining.IndexerBlock, height int, isOwn bool) {
+			targetHex := da.TargetHex()
+			poiBlock := &db.PoIBlock{
+				Hash:         block.Hash,
+				Height:       height,
+				PrevHash:     block.Header.PrevHash,
+				MerkleRoot:   block.Header.MerkleRoot,
+				MinerAddress: block.Header.MinerAddress,
+				Timestamp:    block.Header.Timestamp,
+				Bits:         block.Header.Bits,
+				Nonce:        int64(block.Header.Nonce),
+				Version:      block.Header.Version,
+				ItemCount:    len(block.Items),
+				IsOwn:        isOwn,
+				TargetHex:    &targetHex,
+			}
+			if isOwn && len(block.Items) > 0 {
+				itemsJSON, _ := json.Marshal(block.Items)
+				itemsStr := string(itemsJSON)
+				poiBlock.ItemsJSON = &itemsStr
+			}
+			if err := db.InsertPoIBlock(poiBlock); err != nil {
+				log.Printf("[daemon] Failed to store block %s: %v", block.Hash[:16], err)
+			}
+		})
+
+		// Wire block announcements: mined blocks → gossip network
+		d.miner.SetBlockAnnouncer(func(block *mining.IndexerBlock, height int) {
+			if d.gossipNode == nil {
+				return
+			}
+			payload := &gossip.BlockAnnouncePayload{
+				Hash:         block.Hash,
+				Height:       height,
+				MinerAddress: block.Header.MinerAddress,
+				Timestamp:    block.Header.Timestamp,
+				Bits:         block.Header.Bits,
+				TargetHex:    da.TargetHex(),
+				MerkleRoot:   block.Header.MerkleRoot,
+				PrevHash:     block.Header.PrevHash,
+				Nonce:        block.Header.Nonce,
+				Version:      block.Header.Version,
+				ItemCount:    len(block.Items),
+			}
+			msg, err := gossip.NewBlockAnnounce(d.nodeID, payload)
+			if err != nil {
+				log.Printf("[daemon] Failed to create block announce: %v", err)
+				return
+			}
+			if err := d.gossipNode.Publish(msg); err != nil {
+				log.Printf("[daemon] Failed to publish block announce: %v", err)
+			} else {
+				log.Printf("[daemon] Block announced to network: %s (height %d)", block.Hash[:16], height)
+			}
+		})
+
+		// Wire gossip block announcements → difficulty adjuster
+		handler.SetBlockObserver(func(senderID string, payload *gossip.BlockAnnouncePayload) {
+			// Verify the PoW: reconstruct header, hash it, check difficulty
+			header := &mining.BlockHeader{
+				Version:      payload.Version,
+				PrevHash:     payload.PrevHash,
+				MerkleRoot:   payload.MerkleRoot,
+				Timestamp:    payload.Timestamp,
+				Bits:         payload.Bits,
+				Nonce:        payload.Nonce,
+				MinerAddress: payload.MinerAddress,
+			}
+			hash := mining.CalculateBlockHash(header)
+			if hash != payload.Hash {
+				log.Printf("[daemon] REJECTED block from %s: hash mismatch (got %s, claimed %s)",
+					senderID[:min(16, len(senderID))], hash[:16], payload.Hash[:16])
+				return
+			}
+			if !mining.CheckDifficulty(hash, payload.Bits) {
+				log.Printf("[daemon] REJECTED block from %s: difficulty not met (bits=%d)",
+					senderID[:min(16, len(senderID))], payload.Bits)
+				return
+			}
+
+			// Valid block from peer — feed to difficulty adjuster
+			ts := time.UnixMilli(payload.Timestamp)
+			da.RecordBlock(ts)
+			log.Printf("[daemon] Accepted peer block: %s from %s (difficulty %d)",
+				payload.Hash[:16], senderID[:min(16, len(senderID))], payload.Bits)
+
+			// Store peer block in database
+			peerID := senderID
+			targetHex := payload.TargetHex
+			if err := db.InsertPoIBlock(&db.PoIBlock{
+				Hash:         payload.Hash,
+				Height:       payload.Height,
+				PrevHash:     payload.PrevHash,
+				MerkleRoot:   payload.MerkleRoot,
+				MinerAddress: payload.MinerAddress,
+				Timestamp:    payload.Timestamp,
+				Bits:         payload.Bits,
+				Nonce:        int64(payload.Nonce),
+				Version:      payload.Version,
+				ItemCount:    payload.ItemCount,
+				IsOwn:        false,
+				SourcePeer:   &peerID,
+				TargetHex:    &targetHex,
+			}); err != nil {
+				log.Printf("[daemon] Failed to store peer block %s: %v", payload.Hash[:16], err)
+			}
+		})
+
 		// Configure mint broadcaster
 		switch d.cfg.Mining.BroadcastMode {
 		case "native":
@@ -187,19 +333,29 @@ func (d *Daemon) Start() error {
 		d.miner.OnBlock(func(event mining.BlockMinedEvent) {
 			log.Printf("[daemon] Block mined: %s (%d items)",
 				event.Block.Hash[:16], len(event.Block.Items))
+			// Persist difficulty target after each block (captures any adjustment)
+			if err := db.SetConfig("difficulty_target", da.TargetHex()); err != nil {
+				log.Printf("[daemon] Failed to persist difficulty target: %v", err)
+			}
 		})
 
 		d.miner.OnMintClaimed(func(event mining.MintClaimedEvent) {
 			log.Printf("[daemon] Mint claimed! txid=%s amount=%d",
 				event.Txid, event.Amount)
+			// Link mint txid to the block that was claimed
+			if event.BlockHash != "" {
+				if err := db.UpdateBlockMintTxid(event.BlockHash, event.Txid); err != nil {
+					log.Printf("[daemon] Failed to link mint txid to block: %v", err)
+				}
+			}
 		})
 
 		// Wire gossip → mining: validated gossip events become mining work
 		handler.SetWorkSubmitter(d.miner.SubmitWork)
 
 		d.miner.Start()
-		log.Printf("[daemon] Mining service started (address: %s, difficulty: %d)",
-			minerAddr, d.cfg.Mining.Difficulty)
+		log.Printf("[daemon] Mining service started (address: %s, difficulty: %d, target block time: %v)",
+			minerAddr, d.cfg.Mining.Difficulty, targetBlockTime)
 	}
 
 	// 6. Start periodic status logging
@@ -281,6 +437,13 @@ func (d *Daemon) PeerCount() int {
 	return 0
 }
 
+func (d *Daemon) GossipPeerID() string {
+	if d.gossipNode != nil {
+		return d.gossipNode.PeerID()
+	}
+	return ""
+}
+
 func (d *Daemon) MiningStatus() map[string]interface{} {
 	if d.miner != nil {
 		return d.miner.Status()
@@ -354,6 +517,29 @@ func (d *Daemon) ValidateMerkleRoot(root string, height int) (bool, error) {
 		return false, fmt.Errorf("header sync not enabled")
 	}
 	return d.headerSync.ValidateMerkleRoot(root, height)
+}
+
+// GetRecentBlocks returns the latest N blocks from the database.
+func (d *Daemon) GetRecentBlocks(limit, offset int) ([]db.PoIBlock, error) {
+	return db.GetRecentPoIBlocks(limit, offset)
+}
+
+// GetBlockCounts returns total and own block counts.
+func (d *Daemon) GetBlockCounts() (total, own int, err error) {
+	total, err = db.GetPoIBlockCount()
+	if err != nil {
+		return 0, 0, err
+	}
+	own, err = db.GetOwnBlockCount()
+	if err != nil {
+		return total, 0, err
+	}
+	return total, own, nil
+}
+
+// GetBlockByHash returns a single block by its hash.
+func (d *Daemon) GetBlockByHash(hash string) (*db.PoIBlock, error) {
+	return db.GetPoIBlockByHash(hash)
 }
 
 // loadOrCreateLibp2pIdentity loads a persisted Ed25519 key from the DB,

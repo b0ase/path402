@@ -53,6 +53,15 @@ export enum MessageType {
   // Real-time Chat
   CHAT_MESSAGE = 'CHAT_MESSAGE',
 
+  // Room messages (via $402/rooms/v1 topic)
+  ROOM_CHAT_MESSAGE = 'ROOM_CHAT_MESSAGE',
+  ROOM_JOIN = 'ROOM_JOIN',
+  ROOM_LEAVE = 'ROOM_LEAVE',
+  ROOM_ANNOUNCE = 'ROOM_ANNOUNCE',
+
+  // Block announcements (PoI mining)
+  BLOCK_ANNOUNCE = 'BLOCK_ANNOUNCE',
+
   // Ping/Pong for keepalive
   PING = 'PING',
   PONG = 'PONG'
@@ -98,6 +107,100 @@ export interface IceCandidatePayload {
 export interface CallSignalMessage {
   type: CallSignalType;
   payload: CallOfferPayload | CallAnswerPayload | CallRejectPayload | CallHangupPayload | IceCandidatePayload;
+}
+
+// ── DM Signal Types (Direct Stream, not GossipSub) ──────────────
+
+export enum DMSignalType {
+  DM_MESSAGE = 'DM_MESSAGE',
+  DM_ACK = 'DM_ACK',
+  DM_TYPING = 'DM_TYPING',
+}
+
+export interface DMMessagePayload {
+  message_id: string;
+  content: string;
+  sender_handle?: string;
+  timestamp: number;
+}
+
+export interface DMAckPayload {
+  message_id: string;
+}
+
+export interface DMTypingPayload {
+  typing: boolean;
+}
+
+export interface DMSignalMessage {
+  type: DMSignalType;
+  payload: DMMessagePayload | DMAckPayload | DMTypingPayload;
+}
+
+// ── Room Payloads (via GossipSub $402/rooms/v1) ─────────────────
+
+export interface RoomChatPayload {
+  room_id: string;
+  message_id: string;
+  content: string;
+  sender_handle?: string;
+  sender_peer_id: string;
+  timestamp: number;
+}
+
+export interface RoomJoinPayload {
+  room_id: string;
+  peer_id: string;
+  handle?: string;
+}
+
+export interface RoomLeavePayload {
+  room_id: string;
+  peer_id: string;
+}
+
+export interface RoomAnnouncePayload {
+  room_id: string;
+  name: string;
+  room_type: 'text' | 'voice' | 'hybrid';
+  access_type: 'public' | 'private' | 'token_gated';
+  token_id?: string;
+  creator_peer_id: string;
+  capacity: number;
+  description?: string;
+}
+
+// ── Room Voice Signaling (extends call protocol) ────────────────
+
+export enum RoomVoiceSignalType {
+  ROOM_OFFER = 'ROOM_OFFER',
+  ROOM_ANSWER = 'ROOM_ANSWER',
+  ROOM_ICE = 'ROOM_ICE',
+}
+
+export interface RoomVoiceOfferPayload {
+  room_id: string;
+  sdp: string;
+  sender_peer_id: string;
+}
+
+export interface RoomVoiceAnswerPayload {
+  room_id: string;
+  sdp: string;
+  sender_peer_id: string;
+}
+
+export interface RoomVoiceIcePayload {
+  room_id: string;
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+  sender_peer_id: string;
+}
+
+export interface RoomVoiceSignalMessage {
+  type: RoomVoiceSignalType;
+  payload: RoomVoiceOfferPayload | RoomVoiceAnswerPayload | RoomVoiceIcePayload;
 }
 
 // ── Message Payloads ───────────────────────────────────────────────
@@ -227,6 +330,20 @@ export interface ChatPayload {
   timestamp: number;
 }
 
+export interface BlockAnnouncePayload {
+  hash: string;
+  height: number;
+  miner_address: string;
+  timestamp: number;
+  bits: number;
+  target: string;        // Full 256-bit target hex
+  merkle_root: string;
+  prev_hash: string;
+  nonce: number;
+  version: number;
+  item_count: number;
+}
+
 // ── Message Envelope ───────────────────────────────────────────────
 
 export interface GossipMessage<T = unknown> {
@@ -329,6 +446,10 @@ export function createTicketStamp(nodeId: string, stamp: TicketStampPayload): Go
 
 export function createChatMessage(nodeId: string, chat: ChatPayload): GossipMessage<ChatPayload> {
   return createMessage(MessageType.CHAT_MESSAGE, nodeId, chat);
+}
+
+export function createBlockAnnounce(nodeId: string, block: BlockAnnouncePayload): GossipMessage<BlockAnnouncePayload> {
+  return createMessage(MessageType.BLOCK_ANNOUNCE, nodeId, block);
 }
 
 // ── Message Validation ─────────────────────────────────────────────

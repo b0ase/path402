@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/db"
 )
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /{$}", s.handleDashboard)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /api/tokens", s.handleTokens)
@@ -18,6 +20,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/headers/status", s.handleHeadersStatus)
 	mux.HandleFunc("GET /api/headers/tip", s.handleHeadersTip)
 	mux.HandleFunc("GET /api/headers/verify", s.handleHeadersVerify)
+	mux.HandleFunc("GET /api/blocks", s.handleBlocks)
+	mux.HandleFunc("GET /api/blocks/latest", s.handleBlockLatest)
+	mux.HandleFunc("GET /api/blocks/count", s.handleBlockCount)
+	mux.HandleFunc("GET /api/blocks/{hash}", s.handleBlockByHash)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
@@ -58,9 +64,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"node_id":   s.daemon.NodeID(),
 		"uptime_ms": s.daemon.Uptime().Milliseconds(),
-		"peers": map[string]int{
+		"peers": map[string]interface{}{
 			"connected": s.daemon.PeerCount(),
 			"known":     peerCount,
+			"peer_id":   s.daemon.GossipPeerID(),
 		},
 		"tokens": map[string]int{
 			"known": tokenCount,
@@ -159,4 +166,60 @@ func (s *Server) handleHeadersVerify(w http.ResponseWriter, r *http.Request) {
 		"height": height,
 		"valid":  valid,
 	})
+}
+
+func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	offset := 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	blocks, err := db.GetRecentPoIBlocks(limit, offset)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if blocks == nil {
+		blocks = []db.PoIBlock{}
+	}
+	writeJSON(w, blocks)
+}
+
+func (s *Server) handleBlockLatest(w http.ResponseWriter, r *http.Request) {
+	block, err := db.GetLatestPoIBlock()
+	if err != nil {
+		writeError(w, 404, "no blocks found")
+		return
+	}
+	writeJSON(w, block)
+}
+
+func (s *Server) handleBlockCount(w http.ResponseWriter, r *http.Request) {
+	total, _ := db.GetPoIBlockCount()
+	own, _ := db.GetOwnBlockCount()
+	writeJSON(w, map[string]int{
+		"total": total,
+		"own":   own,
+	})
+}
+
+func (s *Server) handleBlockByHash(w http.ResponseWriter, r *http.Request) {
+	hash := r.PathValue("hash")
+	if hash == "" {
+		writeError(w, 400, "hash required")
+		return
+	}
+	block, err := db.GetPoIBlockByHash(hash)
+	if err != nil {
+		writeError(w, 404, "block not found")
+		return
+	}
+	writeJSON(w, block)
 }

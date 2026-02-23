@@ -92,6 +92,7 @@ func GetStatus() string {
 		"peers":     d.PeerCount(),
 		"mining":    d.MiningStatus(),
 		"headers":   d.HeaderSyncStatus(),
+		"wallet":    d.WalletStatus(),
 	}
 
 	data, _ := json.Marshal(status)
@@ -130,4 +131,115 @@ func GetAPIPort() int {
 // GetVersion returns the ClawMiner version string.
 func GetVersion() string {
 	return version
+}
+
+// GenerateWallet creates a new random keypair, persists it, and replaces the current wallet.
+// Returns JSON: {"address":"...","public_key":"..."} or {"error":"..."}.
+func GenerateWallet() string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"error":"daemon not running"}`
+	}
+	if err := d.GenerateNewWallet(); err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(data)
+	}
+	data, _ := json.Marshal(d.WalletStatus())
+	return string(data)
+}
+
+// ImportWallet loads a wallet from a WIF string and replaces the current wallet.
+// Returns JSON: {"address":"...","public_key":"..."} or {"error":"..."}.
+func ImportWallet(wif string) string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"error":"daemon not running"}`
+	}
+	if err := d.ImportWallet(wif); err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(data)
+	}
+	data, _ := json.Marshal(d.WalletStatus())
+	return string(data)
+}
+
+// GetBlocks returns recent PoI blocks as a JSON array.
+// Returns JSON: [{"hash":"...","height":N,...},...] or "[]".
+func GetBlocks(limit int) string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `[]`
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	blocks, err := d.GetRecentBlocks(limit, 0)
+	if err != nil {
+		return `[]`
+	}
+	data, _ := json.Marshal(blocks)
+	return string(data)
+}
+
+// GetBlockCount returns block counts as a JSON string.
+// Returns JSON: {"total":N,"own":M} or {"error":"..."}.
+func GetBlockCount() string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"error":"daemon not running"}`
+	}
+	total, own, err := d.GetBlockCounts()
+	if err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(data)
+	}
+	data, _ := json.Marshal(map[string]int{"total": total, "own": own})
+	return string(data)
+}
+
+// GetBlockByHash returns a single block by its hash.
+// Returns JSON: {"hash":"...",...} or {"error":"..."}.
+func GetBlockByHash(hash string) string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"error":"daemon not running"}`
+	}
+	block, err := d.GetBlockByHash(hash)
+	if err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(data)
+	}
+	data, _ := json.Marshal(block)
+	return string(data)
+}
+
+// ExportWIF returns the current wallet's WIF private key.
+// Returns JSON: {"wif":"K..."} or {"error":"..."}.
+func ExportWIF() string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"error":"daemon not running"}`
+	}
+	wif, err := d.ExportWIF()
+	if err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(data)
+	}
+	data, _ := json.Marshal(map[string]string{"wif": wif})
+	return string(data)
 }
