@@ -733,6 +733,297 @@ export function getCallRecord(callId: string): CallRecord | null {
   return getDb().prepare('SELECT * FROM call_records WHERE call_id = ?').get(callId) as CallRecord | null;
 }
 
+// ── Cashboard Run Operations ──────────────────────────────────────
+
+export interface CashboardRunRow {
+  id: string;
+  workflow_id: string;
+  workflow_name: string;
+  status: string;
+  started_at: number;
+  finished_at: number | null;
+  node_count: number;
+  completed_count: number;
+  error: string | null;
+  created_at: number;
+}
+
+export interface CashboardStepRow {
+  id: string;
+  run_id: string;
+  node_id: string;
+  action: string;
+  status: string;
+  result_json: string | null;
+  error: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+  duration_ms: number | null;
+}
+
+export function createCashboardRun(run: {
+  id: string;
+  workflow_id: string;
+  workflow_name: string;
+  node_count: number;
+}): void {
+  getDb().prepare(`
+    INSERT INTO cashboard_runs (id, workflow_id, workflow_name, status, node_count)
+    VALUES (?, ?, ?, 'pending', ?)
+  `).run(run.id, run.workflow_id, run.workflow_name, run.node_count);
+}
+
+export function getCashboardRun(runId: string): CashboardRunRow | null {
+  return getDb().prepare('SELECT * FROM cashboard_runs WHERE id = ?').get(runId) as CashboardRunRow | null;
+}
+
+export function getAllCashboardRuns(limit = 20): CashboardRunRow[] {
+  return getDb().prepare(
+    'SELECT * FROM cashboard_runs ORDER BY started_at DESC LIMIT ?'
+  ).all(limit) as CashboardRunRow[];
+}
+
+export function updateCashboardRun(runId: string, updates: {
+  status?: string;
+  finished_at?: number;
+  completed_count?: number;
+  error?: string;
+}): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      sets.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+  if (sets.length === 0) return;
+  values.push(runId);
+  getDb().prepare(
+    `UPDATE cashboard_runs SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...values);
+}
+
+export function createCashboardStep(step: {
+  id: string;
+  run_id: string;
+  node_id: string;
+  action: string;
+}): void {
+  getDb().prepare(`
+    INSERT INTO cashboard_steps (id, run_id, node_id, action, status)
+    VALUES (?, ?, ?, ?, 'pending')
+  `).run(step.id, step.run_id, step.node_id, step.action);
+}
+
+export function getCashboardStepsByRun(runId: string): CashboardStepRow[] {
+  return getDb().prepare(
+    'SELECT * FROM cashboard_steps WHERE run_id = ? ORDER BY started_at ASC'
+  ).all(runId) as CashboardStepRow[];
+}
+
+export function updateCashboardStep(stepId: string, updates: {
+  status?: string;
+  result_json?: string;
+  error?: string;
+  started_at?: number;
+  finished_at?: number;
+  duration_ms?: number;
+}): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      sets.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+  if (sets.length === 0) return;
+  values.push(stepId);
+  getDb().prepare(
+    `UPDATE cashboard_steps SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...values);
+}
+
+export function getActiveCashboardRun(): CashboardRunRow | null {
+  return getDb().prepare(
+    "SELECT * FROM cashboard_runs WHERE status IN ('pending', 'running', 'paused') ORDER BY started_at DESC LIMIT 1"
+  ).get() as CashboardRunRow | null;
+}
+
+// ── Chat Message Operations ──────────────────────────────────────
+
+export interface ChatMessage {
+  id: number;
+  message_id: string;
+  message_type: 'channel' | 'dm' | 'room';
+  channel: string | null;
+  room_id: string | null;
+  sender_peer_id: string;
+  recipient_peer_id: string | null;
+  sender_handle: string | null;
+  content: string;
+  timestamp: number;
+  received_at: number;
+}
+
+export interface ChatRoom {
+  room_id: string;
+  name: string;
+  room_type: 'text' | 'voice' | 'hybrid';
+  access_type: 'public' | 'private' | 'token_gated';
+  token_id: string | null;
+  creator_peer_id: string;
+  capacity: number;
+  description: string | null;
+  created_at: number;
+}
+
+export interface RoomMember {
+  id: number;
+  room_id: string;
+  peer_id: string;
+  role: 'owner' | 'admin' | 'member';
+  active: number;
+  joined_at: number;
+  left_at: number | null;
+}
+
+export function saveChatMessage(msg: {
+  message_id: string;
+  message_type: 'channel' | 'dm' | 'room';
+  channel?: string;
+  room_id?: string;
+  sender_peer_id: string;
+  recipient_peer_id?: string;
+  sender_handle?: string;
+  content: string;
+  timestamp: number;
+}): void {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO chat_messages
+    (message_id, message_type, channel, room_id, sender_peer_id, recipient_peer_id, sender_handle, content, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    msg.message_id,
+    msg.message_type,
+    msg.channel ?? null,
+    msg.room_id ?? null,
+    msg.sender_peer_id,
+    msg.recipient_peer_id ?? null,
+    msg.sender_handle ?? null,
+    msg.content,
+    msg.timestamp
+  );
+}
+
+export function getChannelMessages(channel: string, limit = 50, before?: number): ChatMessage[] {
+  if (before) {
+    return getDb().prepare(
+      `SELECT * FROM chat_messages WHERE message_type = 'channel' AND channel = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
+    ).all(channel, before, limit) as ChatMessage[];
+  }
+  return getDb().prepare(
+    `SELECT * FROM chat_messages WHERE message_type = 'channel' AND channel = ? ORDER BY timestamp DESC LIMIT ?`
+  ).all(channel, limit) as ChatMessage[];
+}
+
+export function getDMMessages(peerA: string, peerB: string, limit = 50, before?: number): ChatMessage[] {
+  const sql = before
+    ? `SELECT * FROM chat_messages WHERE message_type = 'dm'
+       AND ((sender_peer_id = ? AND recipient_peer_id = ?) OR (sender_peer_id = ? AND recipient_peer_id = ?))
+       AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
+    : `SELECT * FROM chat_messages WHERE message_type = 'dm'
+       AND ((sender_peer_id = ? AND recipient_peer_id = ?) OR (sender_peer_id = ? AND recipient_peer_id = ?))
+       ORDER BY timestamp DESC LIMIT ?`;
+
+  if (before) {
+    return getDb().prepare(sql).all(peerA, peerB, peerB, peerA, before, limit) as ChatMessage[];
+  }
+  return getDb().prepare(sql).all(peerA, peerB, peerB, peerA, limit) as ChatMessage[];
+}
+
+export function getRoomMessages(roomId: string, limit = 50, before?: number): ChatMessage[] {
+  if (before) {
+    return getDb().prepare(
+      `SELECT * FROM chat_messages WHERE message_type = 'room' AND room_id = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?`
+    ).all(roomId, before, limit) as ChatMessage[];
+  }
+  return getDb().prepare(
+    `SELECT * FROM chat_messages WHERE message_type = 'room' AND room_id = ? ORDER BY timestamp DESC LIMIT ?`
+  ).all(roomId, limit) as ChatMessage[];
+}
+
+export function getDMConversations(myPeerId: string): Array<{ peer_id: string; last_message: string; last_timestamp: number; unread_count: number }> {
+  return getDb().prepare(`
+    SELECT
+      CASE WHEN sender_peer_id = ? THEN recipient_peer_id ELSE sender_peer_id END as peer_id,
+      content as last_message,
+      MAX(timestamp) as last_timestamp,
+      0 as unread_count
+    FROM chat_messages
+    WHERE message_type = 'dm' AND (sender_peer_id = ? OR recipient_peer_id = ?)
+    GROUP BY peer_id
+    ORDER BY last_timestamp DESC
+  `).all(myPeerId, myPeerId, myPeerId) as Array<{ peer_id: string; last_message: string; last_timestamp: number; unread_count: number }>;
+}
+
+// ── Chat Room Operations ──────────────────────────────────────
+
+export function createChatRoom(room: {
+  room_id: string;
+  name: string;
+  room_type: 'text' | 'voice' | 'hybrid';
+  access_type: 'public' | 'private' | 'token_gated';
+  token_id?: string;
+  creator_peer_id: string;
+  capacity?: number;
+  description?: string;
+}): void {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO chat_rooms (room_id, name, room_type, access_type, token_id, creator_peer_id, capacity, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    room.room_id,
+    room.name,
+    room.room_type,
+    room.access_type,
+    room.token_id ?? null,
+    room.creator_peer_id,
+    room.capacity ?? 50,
+    room.description ?? null
+  );
+}
+
+export function getChatRoom(roomId: string): ChatRoom | null {
+  return getDb().prepare('SELECT * FROM chat_rooms WHERE room_id = ?').get(roomId) as ChatRoom | null;
+}
+
+export function getAllChatRooms(): ChatRoom[] {
+  return getDb().prepare('SELECT * FROM chat_rooms ORDER BY created_at DESC').all() as ChatRoom[];
+}
+
+export function addRoomMember(roomId: string, peerId: string, role: 'owner' | 'admin' | 'member' = 'member'): void {
+  getDb().prepare(`
+    INSERT INTO room_members (room_id, peer_id, role, active)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT(room_id, peer_id) DO UPDATE SET active = 1, role = excluded.role, left_at = NULL
+  `).run(roomId, peerId, role);
+}
+
+export function removeRoomMember(roomId: string, peerId: string): void {
+  getDb().prepare(`
+    UPDATE room_members SET active = 0, left_at = unixepoch() WHERE room_id = ? AND peer_id = ?
+  `).run(roomId, peerId);
+}
+
+export function getRoomMembers(roomId: string, activeOnly = true): RoomMember[] {
+  if (activeOnly) {
+    return getDb().prepare('SELECT * FROM room_members WHERE room_id = ? AND active = 1').all(roomId) as RoomMember[];
+  }
+  return getDb().prepare('SELECT * FROM room_members WHERE room_id = ?').all(roomId) as RoomMember[];
+}
+
 // ── Speculation Opportunities ──────────────────────────────────────
 
 export function getSpeculationOpportunities(): Array<{
@@ -753,4 +1044,98 @@ export function getSpeculationOpportunities(): Array<{
     ai_confidence: number | null;
     recommendation: string | null;
   }>;
+}
+
+// ── PoI Blocks ──────────────────────────────────────────────────────
+// Cross-client compatible with Go ClawMiner block storage
+
+export interface PoIBlock {
+  hash: string;
+  height: number;
+  prev_hash: string;
+  merkle_root: string;
+  miner_address: string;
+  timestamp: number;
+  bits: number;
+  nonce: number;
+  version: number;
+  item_count: number;
+  items_json: string | null;
+  is_own: number; // 0 or 1 (SQLite boolean)
+  mint_txid: string | null;
+  target_hex: string | null;
+  source_peer: string | null;
+  created_at: number;
+}
+
+export function insertPoIBlock(block: Omit<PoIBlock, 'created_at'>): void {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO poi_blocks
+      (hash, height, prev_hash, merkle_root, miner_address, timestamp,
+       bits, nonce, version, item_count, items_json, is_own, mint_txid,
+       target_hex, source_peer)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    block.hash, block.height, block.prev_hash, block.merkle_root,
+    block.miner_address, block.timestamp,
+    block.bits, block.nonce, block.version, block.item_count,
+    block.items_json, block.is_own ? 1 : 0, block.mint_txid,
+    block.target_hex, block.source_peer
+  );
+}
+
+export function updateBlockMintTxid(hash: string, txid: string): void {
+  getDb().prepare('UPDATE poi_blocks SET mint_txid = ? WHERE hash = ?').run(txid, hash);
+}
+
+export function getPoIBlockByHash(hash: string): PoIBlock | undefined {
+  return getDb().prepare(`
+    SELECT hash, height, prev_hash, merkle_root, miner_address, timestamp,
+      bits, nonce, version, item_count, items_json, is_own, mint_txid,
+      target_hex, source_peer, created_at
+    FROM poi_blocks WHERE hash = ?
+  `).get(hash) as PoIBlock | undefined;
+}
+
+export function getLatestPoIBlock(): PoIBlock | undefined {
+  return getDb().prepare(`
+    SELECT hash, height, prev_hash, merkle_root, miner_address, timestamp,
+      bits, nonce, version, item_count, items_json, is_own, mint_txid,
+      target_hex, source_peer, created_at
+    FROM poi_blocks ORDER BY height DESC LIMIT 1
+  `).get() as PoIBlock | undefined;
+}
+
+export function getPoIBlockCount(): number {
+  const row = getDb().prepare('SELECT COUNT(*) as count FROM poi_blocks').get() as { count: number };
+  return row.count;
+}
+
+export function getOwnBlockCount(): number {
+  const row = getDb().prepare('SELECT COUNT(*) as count FROM poi_blocks WHERE is_own = 1').get() as { count: number };
+  return row.count;
+}
+
+export function getRecentPoIBlocks(limit: number, offset = 0): PoIBlock[] {
+  return getDb().prepare(`
+    SELECT hash, height, prev_hash, merkle_root, miner_address, timestamp,
+      bits, nonce, version, item_count, items_json, is_own, mint_txid,
+      target_hex, source_peer, created_at
+    FROM poi_blocks ORDER BY height DESC LIMIT ? OFFSET ?
+  `).all(limit, offset) as PoIBlock[];
+}
+
+export function getBlockTimestampsSince(sinceMs: number): number[] {
+  const rows = getDb().prepare(`
+    SELECT timestamp FROM poi_blocks
+    WHERE timestamp >= ?
+    ORDER BY timestamp ASC
+  `).all(sinceMs) as Array<{ timestamp: number }>;
+  return rows.map(r => r.timestamp);
+}
+
+export function getChainTip(): { hash: string; height: number } | undefined {
+  return getDb().prepare(
+    'SELECT hash, height FROM poi_blocks ORDER BY height DESC LIMIT 1'
+  ).get() as { hash: string; height: number } | undefined;
 }

@@ -40,8 +40,16 @@ import {
   createTicketStamp,
   ChatPayload,
   createChatMessage,
+  BlockAnnouncePayload,
+  createBlockAnnounce,
   GOSSIP_PORT,
   CallSignalMessage,
+  DMSignalMessage,
+  RoomChatPayload,
+  RoomJoinPayload,
+  RoomLeavePayload,
+  RoomAnnouncePayload,
+  RoomVoiceSignalMessage,
 } from './protocol.js';
 import {
   getNodeId,
@@ -69,10 +77,13 @@ const TOPICS = {
   TRANSFERS: '$402/transfers/v1',
   STAMPS: '$402/stamps/v1',
   CHAT: '$402/chat/v1',
-  CONTENT: '$402/content/v1'
+  CONTENT: '$402/content/v1',
+  ROOMS: '$402/rooms/v1',
+  BLOCKS: '$402/blocks/v1'
 };
 
 const CALL_PROTOCOL = '/path402/call/1.0.0';
+const DM_PROTOCOL = '/path402/dm/1.0.0';
 
 // Default bootstrap peer (Hetzner DHT relay)
 const DEFAULT_BOOTSTRAP_PEER = '/ip4/135.181.103.181/tcp/4020/p2p/12D3KooWQ4jTKQZaQFksTBuBNSZ6jTGDvWurLYvKzsQv1K7uxcLi';
@@ -167,6 +178,7 @@ export class GossipNode extends EventEmitter {
     // Setup event handlers
     this.setupLibp2pHandlers();
     this.setupCallHandler();
+    this.setupDMHandler();
 
     // Start node
     await this.libp2p.start();
@@ -193,6 +205,8 @@ export class GossipNode extends EventEmitter {
       await lp2p.services.pubsub.subscribe(TOPICS.STAMPS);
       await lp2p.services.pubsub.subscribe(TOPICS.CHAT);
       await lp2p.services.pubsub.subscribe(TOPICS.CONTENT);
+      await lp2p.services.pubsub.subscribe(TOPICS.ROOMS);
+      await lp2p.services.pubsub.subscribe(TOPICS.BLOCKS);
     }
 
     this.started = true;
@@ -286,6 +300,26 @@ export class GossipNode extends EventEmitter {
       case MessageType.CONTENT_OFFER:
         this.handleContentOffer(msg.sender_id, msg as GossipMessage<ContentOfferPayload>);
         break;
+
+      case MessageType.ROOM_CHAT_MESSAGE:
+        this.handleRoomChat(msg.sender_id, msg as GossipMessage<RoomChatPayload>);
+        break;
+
+      case MessageType.ROOM_JOIN:
+        this.handleRoomJoin(msg.sender_id, msg as GossipMessage<RoomJoinPayload>);
+        break;
+
+      case MessageType.ROOM_LEAVE:
+        this.handleRoomLeave(msg.sender_id, msg as GossipMessage<RoomLeavePayload>);
+        break;
+
+      case MessageType.ROOM_ANNOUNCE:
+        this.handleRoomAnnounce(msg.sender_id, msg as GossipMessage<RoomAnnouncePayload>);
+        break;
+
+      case MessageType.BLOCK_ANNOUNCE:
+        this.handleBlockAnnounce(msg.sender_id, msg as GossipMessage<BlockAnnouncePayload>);
+        break;
     }
   }
 
@@ -351,6 +385,89 @@ export class GossipNode extends EventEmitter {
     const offer = msg.payload;
     console.log(`[GossipNode] Content offer for ${offer.token_id} (${offer.content_size} bytes) from ${peerId}`);
     this.emit('content:offered', offer, peerId);
+  }
+
+  private handleRoomChat(peerId: string, msg: GossipMessage<RoomChatPayload>): void {
+    const chat = msg.payload;
+    console.log(`[GossipNode] Room chat in ${chat.room_id} from ${chat.sender_peer_id}`);
+    this.emit('room:chat', chat);
+  }
+
+  private handleRoomJoin(peerId: string, msg: GossipMessage<RoomJoinPayload>): void {
+    const payload = msg.payload;
+    console.log(`[GossipNode] ${payload.peer_id} joined room ${payload.room_id}`);
+    this.emit('room:join', payload);
+  }
+
+  private handleRoomLeave(peerId: string, msg: GossipMessage<RoomLeavePayload>): void {
+    const payload = msg.payload;
+    console.log(`[GossipNode] ${payload.peer_id} left room ${payload.room_id}`);
+    this.emit('room:leave', payload);
+  }
+
+  private handleRoomAnnounce(peerId: string, msg: GossipMessage<RoomAnnouncePayload>): void {
+    const payload = msg.payload;
+    console.log(`[GossipNode] Room announced: ${payload.name} (${payload.room_id})`);
+    this.emit('room:announced', payload);
+  }
+
+  private handleBlockAnnounce(peerId: string, msg: GossipMessage<BlockAnnouncePayload>): void {
+    const block = msg.payload;
+    console.log(`[GossipNode] Block announced: height=${block.height} hash=${block.hash.slice(0, 16)}... from ${peerId.slice(0, 8)}...`);
+    this.emit('block:announced', block, peerId);
+  }
+
+  // ── DM Signaling (Direct Streams) ────────────────────────────
+
+  private setupDMHandler(): void {
+    if (!this.libp2p) return;
+
+    this.libp2p.handle(DM_PROTOCOL, async ({ stream, connection }) => {
+      const remotePeer = connection.remotePeer.toString();
+      try {
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of stream.source) {
+          chunks.push(chunk.subarray());
+        }
+        const data = new TextDecoder().decode(Buffer.concat(chunks));
+        const signal = JSON.parse(data) as DMSignalMessage;
+        console.log(`[GossipNode] DM signal from ${remotePeer}: ${signal.type}`);
+        this.emit('dm:received', remotePeer, signal);
+      } catch (err) {
+        console.error(`[GossipNode] Failed to handle DM from ${remotePeer}:`, err);
+      }
+    });
+
+    console.log(`[GossipNode] DM protocol handler registered: ${DM_PROTOCOL}`);
+  }
+
+  async sendDM(peerId: string, signal: DMSignalMessage): Promise<void> {
+    if (!this.libp2p) throw new Error('libp2p not started');
+
+    const pid = peerIdFromString(peerId) as any;
+    const stream = await this.libp2p.dialProtocol(pid, DM_PROTOCOL);
+    const data = new TextEncoder().encode(JSON.stringify(signal));
+
+    const writer = stream.sink;
+    await writer((async function* () { yield data; })());
+
+    console.log(`[GossipNode] Sent DM ${signal.type} to ${peerId}`);
+  }
+
+  // ── Room Voice Signaling (Direct Streams) ────────────────────
+
+  async sendRoomVoiceSignal(peerId: string, signal: RoomVoiceSignalMessage): Promise<void> {
+    // Reuse call protocol stream for room voice signaling
+    if (!this.libp2p) throw new Error('libp2p not started');
+
+    const pid = peerIdFromString(peerId) as any;
+    const stream = await this.libp2p.dialProtocol(pid, CALL_PROTOCOL);
+    const data = new TextEncoder().encode(JSON.stringify(signal));
+
+    const writer = stream.sink;
+    await writer((async function* () { yield data; })());
+
+    console.log(`[GossipNode] Sent room voice signal ${signal.type} to ${peerId}`);
   }
 
   // ── Call Signaling (Direct Streams) ────────────────────────────
@@ -446,6 +563,52 @@ export class GossipNode extends EventEmitter {
     const msg = createChatMessage(this.nodeId, chat);
     this.publish(TOPICS.CHAT, msg);
     console.log(`[GossipNode] Broadcast chat message via GossipSub`);
+  }
+
+  broadcastRoomMessage(payload: RoomChatPayload): void {
+    const msg = createMessage<RoomChatPayload>(
+      MessageType.ROOM_CHAT_MESSAGE,
+      this.nodeId,
+      payload
+    );
+    this.publish(TOPICS.ROOMS, msg);
+    console.log(`[GossipNode] Broadcast room chat to ${payload.room_id}`);
+  }
+
+  broadcastRoomJoin(payload: RoomJoinPayload): void {
+    const msg = createMessage<RoomJoinPayload>(
+      MessageType.ROOM_JOIN,
+      this.nodeId,
+      payload
+    );
+    this.publish(TOPICS.ROOMS, msg);
+    console.log(`[GossipNode] Broadcast room join for ${payload.room_id}`);
+  }
+
+  broadcastRoomLeave(payload: RoomLeavePayload): void {
+    const msg = createMessage<RoomLeavePayload>(
+      MessageType.ROOM_LEAVE,
+      this.nodeId,
+      payload
+    );
+    this.publish(TOPICS.ROOMS, msg);
+    console.log(`[GossipNode] Broadcast room leave for ${payload.room_id}`);
+  }
+
+  announceRoom(payload: RoomAnnouncePayload): void {
+    const msg = createMessage<RoomAnnouncePayload>(
+      MessageType.ROOM_ANNOUNCE,
+      this.nodeId,
+      payload
+    );
+    this.publish(TOPICS.ROOMS, msg);
+    console.log(`[GossipNode] Announced room ${payload.name} via GossipSub`);
+  }
+
+  broadcastBlock(block: BlockAnnouncePayload): void {
+    const msg = createBlockAnnounce(this.nodeId, block);
+    this.publish(TOPICS.BLOCKS, msg);
+    console.log(`[GossipNode] Broadcast block height=${block.height} via GossipSub`);
   }
 
   requestContent(tokenId: string, requesterAddress: string): void {

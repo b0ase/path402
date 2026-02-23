@@ -57,12 +57,20 @@ export function checkDifficulty(hash: string, bits: number): boolean {
 }
 
 /**
- * Mining loop (CPU miner)
+ * Check if a hash meets a 256-bit target (hash as bigint <= target)
+ * Used by the DifficultyAdjuster for fine-grained difficulty control.
+ */
+export function checkTarget(hash: string, target: bigint): boolean {
+    const h = BigInt('0x' + hash);
+    return h <= target;
+}
+
+/**
+ * Mining loop (CPU miner) — leading zeros difficulty
  * @param header Template header
  * @param maxIterations Number of hashes to try before returning
  */
 export function mineBlock(header: BlockHeader, maxIterations = 1000000): PoWSolution | null {
-    const start = Date.now();
     let nonce = header.nonce;
 
     for (let i = 0; i < maxIterations; i++) {
@@ -77,6 +85,33 @@ export function mineBlock(header: BlockHeader, maxIterations = 1000000): PoWSolu
         if (checkDifficulty(hash, header.bits)) {
             return {
                 header: { ...header }, // Return copy
+                hash
+            };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Mining loop (CPU miner) — target-based difficulty
+ * Same as mineBlock but uses checkTarget instead of checkDifficulty.
+ * This is the production mining mode when DifficultyAdjuster is active.
+ */
+export function mineBlockWithTarget(header: BlockHeader, target: bigint, maxIterations = 1000): PoWSolution | null {
+    let nonce = header.nonce;
+
+    for (let i = 0; i < maxIterations; i++) {
+        header.nonce = nonce + i;
+        if (i % 10000 === 0) {
+            header.timestamp = Date.now();
+        }
+
+        const hash = calculateBlockHash(header);
+
+        if (checkTarget(hash, target)) {
+            return {
+                header: { ...header },
                 hash
             };
         }

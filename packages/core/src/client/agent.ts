@@ -14,7 +14,9 @@ import { EventEmitter } from 'events';
 import { join } from 'path';
 import { createRequire } from 'module';
 import { GossipNode, GossipNodeConfig } from '../gossip/node.js';
-import type { CallSignalMessage } from '../gossip/protocol.js';
+import type { CallSignalMessage, DMSignalMessage, DMMessagePayload, RoomVoiceSignalMessage } from '../gossip/protocol.js';
+import { DMSignalType as DMSignalTypeEnum } from '../gossip/protocol.js';
+import { randomBytes } from 'crypto';
 import { SpeculationEngine, SpeculationStrategy, STRATEGIES } from '../speculation/engine.js';
 import { IntelligenceProvider } from '../intelligence/provider.js';
 import { ClaudeIntelligenceProvider } from '../intelligence/claude.js';
@@ -42,9 +44,21 @@ import {
   createCallRecord,
   updateCallRecord,
   getCallRecords,
-  getCallRecord
+  getCallRecord,
+  saveChatMessage,
+  getChannelMessages,
+  getDMMessages,
+  getRoomMessages,
+  getDMConversations,
+  createChatRoom,
+  getChatRoom,
+  getAllChatRooms,
+  addRoomMember,
+  removeRoomMember,
+  getRoomMembers,
+  getHolding,
 } from '../db/index.js';
-import type { IdentityToken, CallRecord } from '../db/index.js';
+import type { IdentityToken, CallRecord, ChatMessage, ChatRoom, RoomMember } from '../db/index.js';
 import { validateSymbol, prepareMint, generateTokenId } from '../token/mint.js';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -392,6 +406,106 @@ export class Path402Agent extends EventEmitter {
       this.gossipNode.on('call:signal', (remotePeer: string, signal: CallSignalMessage) => {
         this.emit('call:signal', remotePeer, signal);
       });
+
+      // Persist incoming chat messages
+      this.gossipNode.on('chat:received', (chat: any) => {
+        try {
+          saveChatMessage({
+            message_id: `chat_${chat.timestamp}_${chat.sender_address?.slice(0, 8)}`,
+            message_type: 'channel',
+            channel: chat.channel || 'global',
+            sender_peer_id: chat.sender_address || 'unknown',
+            sender_handle: chat.sender_handle,
+            content: chat.content,
+            timestamp: chat.timestamp,
+          });
+        } catch { /* dedup collision is fine */ }
+      });
+
+      // Handle incoming DMs
+      this.gossipNode.on('dm:received', (remotePeer: string, signal: DMSignalMessage) => {
+        if (signal.type === DMSignalTypeEnum.DM_MESSAGE) {
+          const payload = signal.payload as DMMessagePayload;
+          const myPeerId = this.gossipNode?.getLibp2pPeerId() || getNodeId();
+          try {
+            saveChatMessage({
+              message_id: payload.message_id,
+              message_type: 'dm',
+              sender_peer_id: remotePeer,
+              recipient_peer_id: myPeerId,
+              sender_handle: payload.sender_handle,
+              content: payload.content,
+              timestamp: payload.timestamp,
+            });
+          } catch { /* dedup */ }
+          this.emit('dm:received', remotePeer, payload);
+        }
+      });
+
+      // Persist incoming room messages
+      this.gossipNode.on('room:chat', (chat: any) => {
+        try {
+          saveChatMessage({
+            message_id: chat.message_id,
+            message_type: 'room',
+            room_id: chat.room_id,
+            sender_peer_id: chat.sender_peer_id,
+            sender_handle: chat.sender_handle,
+            content: chat.content,
+            timestamp: chat.timestamp,
+          });
+        } catch { /* dedup */ }
+        this.emit('room:chat', chat);
+      });
+
+      // Handle room join/leave/announce events
+      this.gossipNode.on('room:join', (payload: any) => {
+        try { addRoomMember(payload.room_id, payload.peer_id); } catch { /* ignore */ }
+        this.emit('room:join', payload);
+      });
+
+      this.gossipNode.on('room:leave', (payload: any) => {
+        try { removeRoomMember(payload.room_id, payload.peer_id); } catch { /* ignore */ }
+        this.emit('room:leave', payload);
+      });
+
+      this.gossipNode.on('room:announced', (payload: any) => {
+        // Store the room if we don't have it
+        try {
+          createChatRoom({
+            room_id: payload.room_id,
+            name: payload.name,
+            room_type: payload.room_type || 'text',
+            access_type: payload.access_type || 'public',
+            token_id: payload.token_id,
+            creator_peer_id: payload.creator_peer_id,
+            capacity: payload.capacity || 50,
+            description: payload.description,
+          });
+        } catch { /* already exists */ }
+        this.emit('room:announced', payload);
+      });
+
+      // Handle block announcements — feed peer blocks into mining service
+      this.gossipNode.on('block:announced', (block: any, peerId: string) => {
+        if (this.miningService) {
+          this.miningService.handlePeerBlock({
+            hash: block.hash,
+            height: block.height,
+            prev_hash: block.prev_hash,
+            merkle_root: block.merkle_root,
+            miner_address: block.miner_address,
+            timestamp: block.timestamp,
+            bits: block.bits,
+            nonce: block.nonce,
+            version: block.version || 1,
+            item_count: block.item_count || 0,
+            target_hex: block.target || '',
+            source_peer: peerId,
+          });
+        }
+        this.emit('block:announced', block, peerId);
+      });
     }
 
     if (this.miningService) {
@@ -478,6 +592,7 @@ export class Path402Agent extends EventEmitter {
         broadcasterConnected: !!(this.miningService as any)?.broadcaster,
         tokenId: this.config.tokenId || process.env.HTM_TOKEN_ID,
         minerAddress: process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS,
+        ...(this.miningService ? this.miningService.status() : {}),
       }
     };
   }
@@ -715,6 +830,250 @@ export class Path402Agent extends EventEmitter {
    */
   getCallRecords(limit = 50): CallRecord[] {
     return getCallRecords(limit);
+  }
+
+  // ── DM Methods ──────────────────────────────────────────────
+
+  /**
+   * Send a DM to a specific peer via direct libp2p stream
+   */
+  async sendDM(peerId: string, content: string): Promise<void> {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+
+    const messageId = randomBytes(16).toString('hex');
+    const timestamp = Date.now();
+    const identity = getIdentityToken();
+
+    const signal: DMSignalMessage = {
+      type: DMSignalTypeEnum.DM_MESSAGE,
+      payload: {
+        message_id: messageId,
+        content,
+        sender_handle: identity?.symbol || getNodeId().slice(0, 8),
+        timestamp,
+      }
+    };
+
+    await this.gossipNode.sendDM(peerId, signal);
+
+    // Persist locally
+    saveChatMessage({
+      message_id: messageId,
+      message_type: 'dm',
+      sender_peer_id: this.gossipNode.getLibp2pPeerId() || getNodeId(),
+      recipient_peer_id: peerId,
+      sender_handle: identity?.symbol || getNodeId().slice(0, 8),
+      content,
+      timestamp,
+    });
+  }
+
+  /**
+   * Get DM conversations list
+   */
+  getDMConversations(): Array<{ peer_id: string; last_message: string; last_timestamp: number; unread_count: number }> {
+    const myPeerId = this.gossipNode?.getLibp2pPeerId() || getNodeId();
+    return getDMConversations(myPeerId);
+  }
+
+  /**
+   * Get DM messages with a specific peer
+   */
+  getDMMessages(peerId: string, limit = 50, before?: number): ChatMessage[] {
+    const myPeerId = this.gossipNode?.getLibp2pPeerId() || getNodeId();
+    return getDMMessages(myPeerId, peerId, limit, before);
+  }
+
+  /**
+   * Get channel chat history
+   */
+  getChatHistory(channel: string, limit = 50, before?: number): ChatMessage[] {
+    return getChannelMessages(channel, limit, before);
+  }
+
+  // ── Room Methods ────────────────────────────────────────────
+
+  /**
+   * Create a new chat room, optionally token-gated
+   */
+  async createRoom(
+    name: string,
+    roomType: 'text' | 'voice' | 'hybrid' = 'text',
+    accessType: 'public' | 'private' | 'token_gated' = 'public',
+    tokenSymbol?: string
+  ): Promise<ChatRoom> {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+
+    const roomId = randomBytes(16).toString('hex');
+    const creatorPeerId = this.gossipNode.getLibp2pPeerId() || getNodeId();
+    let tokenId: string | undefined;
+
+    // Mint a BSV-21 token for the room if token-gated
+    if (accessType === 'token_gated' && tokenSymbol) {
+      const sym = tokenSymbol.startsWith('$') ? tokenSymbol : `$${tokenSymbol}`;
+      const issuerAddress = this.config.walletKey
+        ? this.config.walletKey.slice(0, 34)
+        : getNodeId();
+
+      const mintResult = prepareMint({
+        symbol: sym,
+        issuerAddress,
+        accessRate: 1,
+        description: `Room access token for ${name}`
+      });
+
+      if (mintResult.success && mintResult.tokenId) {
+        tokenId = mintResult.tokenId;
+      }
+    }
+
+    const capacity = roomType === 'voice' ? 6 : roomType === 'hybrid' ? 6 : 50;
+
+    // Store in DB
+    createChatRoom({
+      room_id: roomId,
+      name,
+      room_type: roomType,
+      access_type: accessType,
+      token_id: tokenId,
+      creator_peer_id: creatorPeerId,
+      capacity,
+    });
+
+    // Add creator as owner
+    addRoomMember(roomId, creatorPeerId, 'owner');
+
+    // Announce to network
+    this.gossipNode.announceRoom({
+      room_id: roomId,
+      name,
+      room_type: roomType,
+      access_type: accessType,
+      token_id: tokenId,
+      creator_peer_id: creatorPeerId,
+      capacity,
+    });
+
+    return getChatRoom(roomId)!;
+  }
+
+  /**
+   * Join a room
+   */
+  joinRoom(roomId: string): void {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+
+    const room = getChatRoom(roomId);
+    if (!room) throw new Error('Room not found');
+
+    const myPeerId = this.gossipNode.getLibp2pPeerId() || getNodeId();
+
+    // Check token gate
+    if (room.access_type === 'token_gated' && room.token_id) {
+      const holding = getHolding(room.token_id);
+      if (!holding || holding.balance <= 0) {
+        throw new Error(`Token gate: you need to hold ${room.token_id} to join this room`);
+      }
+    }
+
+    // Check capacity
+    const members = getRoomMembers(roomId);
+    if (members.length >= room.capacity) {
+      throw new Error('Room is full');
+    }
+
+    addRoomMember(roomId, myPeerId);
+
+    // Broadcast join
+    const identity = getIdentityToken();
+    this.gossipNode.broadcastRoomJoin({
+      room_id: roomId,
+      peer_id: myPeerId,
+      handle: identity?.symbol || getNodeId().slice(0, 8),
+    });
+  }
+
+  /**
+   * Leave a room
+   */
+  leaveRoom(roomId: string): void {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+
+    const myPeerId = this.gossipNode.getLibp2pPeerId() || getNodeId();
+    removeRoomMember(roomId, myPeerId);
+
+    this.gossipNode.broadcastRoomLeave({
+      room_id: roomId,
+      peer_id: myPeerId,
+    });
+  }
+
+  /**
+   * Send a message to a room
+   */
+  sendRoomMessage(roomId: string, content: string): void {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+
+    const messageId = randomBytes(16).toString('hex');
+    const timestamp = Date.now();
+    const myPeerId = this.gossipNode.getLibp2pPeerId() || getNodeId();
+    const identity = getIdentityToken();
+
+    this.gossipNode.broadcastRoomMessage({
+      room_id: roomId,
+      message_id: messageId,
+      content,
+      sender_handle: identity?.symbol || getNodeId().slice(0, 8),
+      sender_peer_id: myPeerId,
+      timestamp,
+    });
+
+    // Persist locally
+    saveChatMessage({
+      message_id: messageId,
+      message_type: 'room',
+      room_id: roomId,
+      sender_peer_id: myPeerId,
+      sender_handle: identity?.symbol || getNodeId().slice(0, 8),
+      content,
+      timestamp,
+    });
+  }
+
+  /**
+   * Get room messages
+   */
+  getRoomMessages(roomId: string, limit = 50, before?: number): ChatMessage[] {
+    return getRoomMessages(roomId, limit, before);
+  }
+
+  /**
+   * Get all rooms
+   */
+  getRooms(): ChatRoom[] {
+    return getAllChatRooms();
+  }
+
+  /**
+   * Get a specific room
+   */
+  getRoom(roomId: string): ChatRoom | null {
+    return getChatRoom(roomId);
+  }
+
+  /**
+   * Get members of a room
+   */
+  getRoomMembers(roomId: string): RoomMember[] {
+    return getRoomMembers(roomId);
+  }
+
+  /**
+   * Send a room voice signal to a specific peer
+   */
+  async sendRoomVoiceSignal(peerId: string, signal: RoomVoiceSignalMessage): Promise<void> {
+    if (!this.gossipNode) throw new Error('Gossip not initialized');
+    await this.gossipNode.sendRoomVoiceSignal(peerId, signal);
   }
 
   /**

@@ -9,17 +9,36 @@
  * 2. Service accumulates items
  * 3. Miner runs in background finding PoW solution
  * 4. Solution found -> Broadcast via MintBroadcaster -> Claim $402 Reward
+ *
+ * v2: Full network parity with Go ClawMiner:
+ * - DifficultyAdjuster (Bitcoin-style, bigint target)
+ * - Block storage (SQLite via db module)
+ * - Chain state restore on startup
+ * - Peer block feeding into difficulty adjuster
  */
 
 import { EventEmitter } from 'events';
 import { IndexerMempool, createBlockTemplate, WorkItem, IndexerBlock, calculateMerkleRoot } from '../mining/block.js';
-import { mineBlock, PoWSolution, BlockHeader } from '../mining/pow.js';
+import { mineBlock, mineBlockWithTarget, PoWSolution, BlockHeader } from '../mining/pow.js';
+import { DifficultyAdjuster, difficultyFromTarget } from '../mining/difficulty.js';
 import { GossipNode } from '../gossip/node.js';
 import type { MintBroadcaster } from '../mining/broadcaster.js';
+import {
+    insertPoIBlock,
+    updateBlockMintTxid,
+    getLatestPoIBlock,
+    getPoIBlockCount,
+    getOwnBlockCount,
+    getBlockTimestampsSince,
+    getChainTip,
+    type PoIBlock,
+} from '../db/index.js';
 
 // Configuration
 const MIN_ITEMS_TO_MINE = 5;
-const INITIAL_DIFFICULTY = 3; // Reduced for testing/responsiveness
+const INITIAL_DIFFICULTY = 3;
+const ADJUSTMENT_PERIOD = 144;       // ~1 day at 10min blocks (matches Go)
+const TARGET_BLOCK_TIME_MS = 600000; // 10 minutes (matches Go)
 const MINT_MAX_RETRIES = 3;
 const MINT_RETRY_MIN_MS = 2000;
 const MINT_RETRY_MAX_MS = 5000;
@@ -29,6 +48,8 @@ export interface ProofOfIndexingOptions {
     privateKey?: string;
     gossipNode?: GossipNode;
     broadcaster?: MintBroadcaster;
+    /** Skip DB operations (for environments without SQLite) */
+    noDb?: boolean;
 }
 
 export class ProofOfIndexingService extends EventEmitter {
@@ -38,6 +59,10 @@ export class ProofOfIndexingService extends EventEmitter {
     private minerAddress: string;
     private broadcaster: MintBroadcaster | null = null;
     private lastBlockHash: string = '0000000000000000000000000000000000000000000000000000000000000000';
+    private difficultyAdjuster: DifficultyAdjuster;
+    private blocksMined: number = 0;
+    private blockHeight: number = 0;
+    private noDb: boolean;
 
     constructor(options: ProofOfIndexingOptions) {
         super();
@@ -45,9 +70,58 @@ export class ProofOfIndexingService extends EventEmitter {
         this.minerAddress = options.minerAddress;
         this.gossipNode = options.gossipNode || null;
         this.broadcaster = options.broadcaster || null;
+        this.noDb = options.noDb || false;
+
+        // Initialize difficulty adjuster
+        this.difficultyAdjuster = new DifficultyAdjuster(
+            INITIAL_DIFFICULTY,
+            ADJUSTMENT_PERIOD,
+            TARGET_BLOCK_TIME_MS
+        );
+
+        // Restore chain state from DB
+        if (!this.noDb) {
+            this.restoreState();
+        }
 
         // Start Heartbeat to keep chain alive during low activity
         this.startHeartbeat();
+    }
+
+    /**
+     * Restore chain tip, difficulty target, and block timestamps from DB.
+     * Called on startup to resume from where we left off.
+     */
+    private restoreState(): void {
+        try {
+            const tip = getChainTip();
+            if (tip) {
+                this.lastBlockHash = tip.hash;
+                this.blockHeight = tip.height;
+                console.log(`[PoI] Restored chain tip: height=${tip.height} hash=${tip.hash.slice(0, 16)}...`);
+            }
+
+            const ownCount = getOwnBlockCount();
+            this.blocksMined = ownCount;
+
+            // Restore difficulty from the latest block's target_hex
+            const latest = getLatestPoIBlock();
+            if (latest?.target_hex) {
+                const target = BigInt('0x' + latest.target_hex);
+                const totalCount = getPoIBlockCount();
+
+                // Get recent timestamps for the current adjustment window
+                // Look back adjustmentPeriod * targetBlockTime to capture current window
+                const windowMs = ADJUSTMENT_PERIOD * TARGET_BLOCK_TIME_MS;
+                const sinceMs = Date.now() - windowMs;
+                const timestamps = getBlockTimestampsSince(sinceMs);
+
+                this.difficultyAdjuster.restoreState(target, totalCount, timestamps);
+                console.log(`[PoI] Restored difficulty: ${difficultyFromTarget(target)} (${totalCount} total blocks, ${timestamps.length} in window)`);
+            }
+        } catch (err) {
+            console.warn('[PoI] Could not restore state from DB:', err);
+        }
     }
 
     setGossipNode(node: GossipNode) {
@@ -56,6 +130,76 @@ export class ProofOfIndexingService extends EventEmitter {
 
     setBroadcaster(broadcaster: MintBroadcaster) {
         this.broadcaster = broadcaster;
+    }
+
+    /** Get the difficulty adjuster for external use (e.g., feeding peer blocks) */
+    getDifficultyAdjuster(): DifficultyAdjuster {
+        return this.difficultyAdjuster;
+    }
+
+    /** Get the current block height */
+    getBlockHeight(): number {
+        return this.blockHeight;
+    }
+
+    /** Get number of own blocks mined */
+    getBlocksMined(): number {
+        return this.blocksMined;
+    }
+
+    /**
+     * Feed a peer block into the difficulty adjuster and store it.
+     * Called when a BLOCK_ANNOUNCE gossip message is received.
+     */
+    handlePeerBlock(block: {
+        hash: string;
+        height: number;
+        prev_hash: string;
+        merkle_root: string;
+        miner_address: string;
+        timestamp: number;
+        bits: number;
+        nonce: number;
+        version: number;
+        item_count: number;
+        target_hex: string;
+        source_peer: string;
+    }): void {
+        // Feed timestamp to difficulty adjuster
+        this.difficultyAdjuster.recordBlock(block.timestamp);
+
+        // Update chain tip if this block is higher
+        if (block.height > this.blockHeight) {
+            this.blockHeight = block.height;
+            this.lastBlockHash = block.hash;
+        }
+
+        // Store in DB
+        if (!this.noDb) {
+            try {
+                insertPoIBlock({
+                    hash: block.hash,
+                    height: block.height,
+                    prev_hash: block.prev_hash,
+                    merkle_root: block.merkle_root,
+                    miner_address: block.miner_address,
+                    timestamp: block.timestamp,
+                    bits: block.bits,
+                    nonce: block.nonce,
+                    version: block.version,
+                    item_count: block.item_count,
+                    items_json: null,
+                    is_own: 0,
+                    mint_txid: null,
+                    target_hex: block.target_hex,
+                    source_peer: block.source_peer,
+                });
+            } catch (err) {
+                // Duplicate block — ignore
+            }
+        }
+
+        this.emit('peer_block', block);
     }
 
     /**
@@ -99,7 +243,8 @@ export class ProofOfIndexingService extends EventEmitter {
         if (this.isMining) return;
         this.isMining = true;
 
-        console.log('[PoI] Starting Miner...');
+        const currentDifficulty = this.difficultyAdjuster.difficulty();
+        console.log(`[PoI] Starting Miner... (difficulty: ${currentDifficulty}, target: ${this.difficultyAdjuster.targetHex().slice(0, 16)}...)`);
 
         setImmediate(async () => {
             try {
@@ -108,20 +253,22 @@ export class ProofOfIndexingService extends EventEmitter {
                     const items = this.mempool.getItems(10); // Batch size 10
                     if (items.length === 0) break;
 
-                    // 2. Create Header
+                    // 2. Create Header (use difficulty adjuster's current difficulty for bits field)
+                    const difficulty = this.difficultyAdjuster.difficulty();
                     const header = createBlockTemplate(
                         items,
                         this.lastBlockHash,
                         this.minerAddress,
-                        INITIAL_DIFFICULTY
+                        difficulty
                     );
 
-                    console.log(`[PoI] Mining block with ${items.length} items. Difficulty: ${INITIAL_DIFFICULTY}`);
+                    console.log(`[PoI] Mining block with ${items.length} items. Difficulty: ${difficulty}`);
 
-                    // 3. Mine in chunks (yields to event loop between batches)
+                    // 3. Mine in chunks using target-based mining
+                    const target = this.difficultyAdjuster.target;
                     let solution: PoWSolution | null = null;
                     for (let chunk = 0; chunk < 1000; chunk++) {
-                        solution = await this.mineAsync(header);
+                        solution = await this.mineAsync(header, target);
                         if (solution) break;
                     }
 
@@ -144,12 +291,12 @@ export class ProofOfIndexingService extends EventEmitter {
     /**
      * Run the miner in small bursts so we don't freeze the event loop
      */
-    private mineAsync(header: BlockHeader): Promise<PoWSolution | null> {
+    private mineAsync(header: BlockHeader, target: bigint): Promise<PoWSolution | null> {
         return new Promise((resolve) => {
             // FORCE YIELD: Use setImmediate to ensure the Event Loop gets a turn
             // This prevents the UI from freezing while mining
             setImmediate(() => {
-                const result = mineBlock(header, 1000);
+                const result = mineBlockWithTarget(header, target, 1000);
                 resolve(result || null);
             });
         });
@@ -158,9 +305,14 @@ export class ProofOfIndexingService extends EventEmitter {
     private async handleBlockFound(solution: PoWSolution, items: WorkItem[]) {
         // 1. Update state
         this.lastBlockHash = solution.hash;
+        this.blockHeight++;
+        this.blocksMined++;
         this.mempool.removeItems(items.map(i => i.id));
 
-        // 2. Create Block Object
+        // 2. Record block in difficulty adjuster
+        this.difficultyAdjuster.recordBlock(solution.header.timestamp);
+
+        // 3. Create Block Object
         const block: IndexerBlock = {
             header: solution.header,
             items,
@@ -169,23 +321,80 @@ export class ProofOfIndexingService extends EventEmitter {
 
         this.emit('block_mined', block);
 
-        // 3. The merkle root IS the BRC-114 work commitment
+        // 4. Store in DB
+        if (!this.noDb) {
+            try {
+                insertPoIBlock({
+                    hash: solution.hash,
+                    height: this.blockHeight,
+                    prev_hash: solution.header.prevHash,
+                    merkle_root: solution.header.merkleRoot,
+                    miner_address: solution.header.minerAddress,
+                    timestamp: solution.header.timestamp,
+                    bits: solution.header.bits,
+                    nonce: solution.header.nonce,
+                    version: solution.header.version,
+                    item_count: items.length,
+                    items_json: JSON.stringify(items.map(i => i.id)),
+                    is_own: 1,
+                    mint_txid: null,
+                    target_hex: this.difficultyAdjuster.targetHex(),
+                    source_peer: null,
+                });
+            } catch (err) {
+                console.warn('[PoI] Failed to store block:', err);
+            }
+        }
+
+        // 5. The merkle root IS the BRC-114 work commitment
         const merkleRoot = solution.header.merkleRoot;
 
-        // 4. Broadcast Mint via HTM contract (with retry for UTXO contention)
+        // 6. Broadcast Mint via HTM contract (with retry for UTXO contention)
         if (this.broadcaster) {
-            await this.claimMint(merkleRoot);
+            const txid = await this.claimMint(merkleRoot);
+            // Link mint txid to block in DB
+            if (txid && !this.noDb) {
+                try {
+                    updateBlockMintTxid(solution.hash, txid);
+                } catch (_) { /* ignore */ }
+            }
         } else {
             console.log('[PoI] No broadcaster configured - skipping mint claim.');
         }
 
-        // 5. Gossip
+        // 7. Gossip block announce
         if (this.gossipNode) {
-            // this.gossipNode.broadcastBlock(block);
+            this.gossipNode.broadcastBlock({
+                hash: solution.hash,
+                height: this.blockHeight,
+                miner_address: this.minerAddress,
+                timestamp: solution.header.timestamp,
+                bits: solution.header.bits,
+                target: this.difficultyAdjuster.targetHex(),
+                merkle_root: solution.header.merkleRoot,
+                prev_hash: solution.header.prevHash,
+                nonce: solution.header.nonce,
+                version: solution.header.version,
+                item_count: items.length,
+            });
         }
     }
 
-    private async claimMint(merkleRoot: string): Promise<void> {
+    /** Mining status for API responses */
+    status(): Record<string, unknown> {
+        return {
+            blocks_mined: this.blocksMined,
+            block_height: this.blockHeight,
+            is_mining: this.isMining,
+            mempool_size: this.mempool.size,
+            last_block: this.lastBlockHash.slice(0, 16),
+            miner_address: this.minerAddress,
+            difficulty: this.difficultyAdjuster.difficulty(),
+            network: this.difficultyAdjuster.stats(),
+        };
+    }
+
+    private async claimMint(merkleRoot: string): Promise<string | null> {
         for (let attempt = 1; attempt <= MINT_MAX_RETRIES; attempt++) {
             const result = await this.broadcaster!.broadcastMint(merkleRoot);
 
@@ -196,13 +405,13 @@ export class ProofOfIndexingService extends EventEmitter {
                     amount: result.amount,
                     merkleRoot,
                 });
-                return;
+                return result.txid || null;
             }
 
             if (result.action === 'stop') {
                 console.log(`[PoI] Mining exhausted: ${result.error}`);
                 this.emit('mint_failed', { error: result.error, merkleRoot });
-                return;
+                return null;
             }
 
             if (result.action === 'retry' && attempt < MINT_MAX_RETRIES) {
@@ -215,7 +424,8 @@ export class ProofOfIndexingService extends EventEmitter {
             // Final failure
             console.error(`[PoI] Mint failed after ${attempt} attempts: ${result.error}`);
             this.emit('mint_failed', { error: result.error, merkleRoot });
-            return;
+            return null;
         }
+        return null;
     }
 }
