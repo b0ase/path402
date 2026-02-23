@@ -1,5 +1,5 @@
 {
-  "name": "@path402/ui",
+  "name": "@b0ase/path402-ui",
   "version": "4.0.0-alpha.1",
   "description": "Shared React UI components for path402",
   "type": "module",

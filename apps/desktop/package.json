@@ -1,5 +1,5 @@
 {
-  "name": "@path402/desktop",
+  "name": "@b0ase/path402-desktop",
   "version": "4.0.0-alpha.3",
   "private": true,
   "description": "Path402 Desktop Client - Electron wrapper",
@@ -8,9 +8,9 @@
   "type": "commonjs",
   "main": "dist/main.js",
   "scripts": {
-    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@path402/htm --format=cjs && cp ../../packages/core/src/db/schema.sql dist/schema.sql",
+    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@b0ase/path402-htm --format=cjs && cp ../../packages/core/src/db/schema.sql dist/schema.sql",
     "build:electron": "pnpm build",
-    "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@path402/htm --format=cjs --watch",
+    "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --target=node22 --outdir=dist --external:electron --external:better-sqlite3 --external:@b0ase/path402-htm --format=cjs --watch",
     "start": "electron dist/main.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -20,8 +20,8 @@
     "dist:all": "bash scripts/dist-cross.sh --linux && bash scripts/dist-cross.sh --win && electron-builder --mac"
   },
   "dependencies": {
-    "@path402/core": "workspace:*",
-    "@path402/htm": "workspace:*",
+    "@b0ase/path402-core": "workspace:*",
+    "@b0ase/path402-htm": "workspace:*",
     "@anthropic-ai/sdk": "^0.39.0",
     "@babbage/sdk": "^0.4.48",
     "@modelcontextprotocol/sdk": "^1.12.1",

@@ -2,7 +2,7 @@
  * MintBroadcaster interface — defines how mined blocks get claimed on-chain.
  *
  * Core defines only the interface; the actual implementation lives in
- * @path402/htm to isolate scrypt-ts CJS dependencies from core's ESM.
+ * @b0ase/path402-htm to isolate scrypt-ts CJS dependencies from core's ESM.
  */
 
 export interface MintBroadcasterResult {

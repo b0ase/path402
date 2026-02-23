@@ -7,7 +7,7 @@
  *   Hash directory → Generate BSV21 inscription → Preview/Broadcast
  *
  * Usage:
- *   import { publishProject } from '@path402/core/publish';
+ *   import { publishProject } from '@b0ase/path402-core/publish';
  *   const result = await publishProject({ dir: '.', dryRun: true });
  */
 

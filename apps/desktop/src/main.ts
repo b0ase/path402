@@ -16,7 +16,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, Notificati
 import { join, dirname } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { Path402Agent, AgentConfig } from '@path402/core';
+import { Path402Agent, AgentConfig } from '@b0ase/path402-core';
 
 // Set app name explicitly for single instance lock consistency
 app.setName('Path402 Client');
@@ -58,15 +58,37 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let agent: Path402Agent | null = null;
+let agentFailed = false;
 let isQuitting = false;
 
 // ── Paths ───────────────────────────────────────────────────────────
 
 // ── Paths ───────────────────────────────────────────────────────────
 
+function getStaticUIPath(): string | null {
+  const possiblePaths = [
+    join(process.resourcesPath || '', 'web', 'out'),
+    join(app.getAppPath(), '..', 'web', 'out'),
+    join(appDir, 'web', 'out'),
+  ];
+  for (const p of possiblePaths) {
+    if (existsSync(join(p, 'index.html'))) {
+      return join(p, 'index.html');
+    }
+  }
+  return null;
+}
+
 function getUIPath(): string {
   if (isDev) {
     return `http://localhost:${DEV_PORT}`;
+  }
+  // If agent failed to start, fall back to static files
+  if (agentFailed) {
+    const staticPath = getStaticUIPath();
+    if (staticPath) {
+      return `file://${staticPath}`;
+    }
   }
   return `http://localhost:${API_PORT}`;
 }
@@ -189,6 +211,26 @@ async function startAgent(): Promise<void> {
     mainWindow?.webContents.send('call-incoming-signal', remotePeer, signal);
   });
 
+  agent.on('dm:received', (remotePeer: string, payload: any) => {
+    mainWindow?.webContents.send('dm-incoming', remotePeer, payload);
+  });
+
+  agent.on('room:chat', (payload: any) => {
+    mainWindow?.webContents.send('room-message', payload);
+  });
+
+  agent.on('room:announced', (payload: any) => {
+    mainWindow?.webContents.send('room-announced', payload);
+  });
+
+  agent.on('room:join', (payload: any) => {
+    mainWindow?.webContents.send('room-member-joined', payload);
+  });
+
+  agent.on('room:leave', (payload: any) => {
+    mainWindow?.webContents.send('room-member-left', payload);
+  });
+
   agent.on('error', (error) => {
     console.error('[Electron] Agent error:', error);
   });
@@ -204,10 +246,19 @@ async function startAgent(): Promise<void> {
 
   try {
     await agent.start();
+    agentFailed = false;
   } catch (err) {
     console.error('[Electron] Failed to start agent:', err);
     agent = null;
-    // Don't retry aggressively if it fails - let the user see the log or restart manually
+    agentFailed = true;
+
+    // Check if we can fall back to static UI
+    const staticPath = getStaticUIPath();
+    if (staticPath) {
+      console.log('[Electron] Agent failed but static UI available — will load from file://');
+    } else {
+      console.error('[Electron] No static UI fallback found either');
+    }
   }
 }
 
@@ -266,12 +317,28 @@ function createWindow(): void {
   const uiPath = getUIPath();
   console.log(`[Electron] Loading UI from: ${uiPath}`);
 
-  // Handle load failures - retry with delay
+  // Handle load failures - fall back to static UI or retry with limit
+  let loadRetries = 0;
+  const MAX_RETRIES = 5;
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.log(`[Electron] Page load failed: ${errorDescription}, retrying...`);
-    setTimeout(() => {
-      mainWindow?.loadURL(uiPath);
-    }, 2000);
+    loadRetries++;
+    console.log(`[Electron] Page load failed (${loadRetries}/${MAX_RETRIES}): ${errorDescription}`);
+
+    if (loadRetries >= MAX_RETRIES || agentFailed) {
+      // Try loading static UI as fallback
+      const staticPath = getStaticUIPath();
+      if (staticPath) {
+        const fileUrl = `file://${staticPath}`;
+        console.log(`[Electron] Falling back to static UI: ${fileUrl}`);
+        mainWindow?.loadURL(fileUrl);
+      } else {
+        console.error('[Electron] No static UI fallback available');
+      }
+    } else {
+      setTimeout(() => {
+        mainWindow?.loadURL(uiPath);
+      }, 2000);
+    }
   });
 
   // Load the UI
@@ -470,7 +537,7 @@ function setupIPC(): void {
   // ── Wallet IPC Handlers ─────────────────────────────────────
 
   ipcMain.handle('connect-wallet', async (_, provider: string, opts?: any) => {
-    const { getWalletManager } = require('@path402/core');
+    const { getWalletManager } = require('@b0ase/path402-core');
     const manager = getWalletManager();
 
     switch (provider) {
@@ -511,7 +578,7 @@ function setupIPC(): void {
 
   ipcMain.handle('get-wallet-balance', async () => {
     try {
-      const { getWalletManager } = require('@path402/core');
+      const { getWalletManager } = require('@b0ase/path402-core');
       const manager = getWalletManager();
       const bsv = manager.getBSV();
       const balance = await bsv.getBalance();
@@ -523,7 +590,7 @@ function setupIPC(): void {
 
   ipcMain.handle('get-wallet-address', async () => {
     try {
-      const { getWalletManager } = require('@path402/core');
+      const { getWalletManager } = require('@b0ase/path402-core');
       const manager = getWalletManager();
       const addresses = await manager.getAddresses();
       return addresses['bsv'] || '';
@@ -533,7 +600,7 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('import-wallet-key', async (_, wif: string) => {
-    const { getWalletManager } = require('@path402/core');
+    const { getWalletManager } = require('@b0ase/path402-core');
     const manager = getWalletManager();
     const bsv = manager.getBSV();
     bsv.importKey(wif);
@@ -637,6 +704,79 @@ function setupIPC(): void {
   ipcMain.handle('call-get-peer-id', async () => {
     if (!agent) return null;
     return agent.getLibp2pPeerId();
+  });
+
+  // ── DM IPC Handlers ─────────────────────────────────────────
+
+  ipcMain.handle('dm-send', async (_, peerId: string, content: string) => {
+    if (!agent) throw new Error('Agent not running');
+    await agent.sendDM(peerId, content);
+    return { success: true };
+  });
+
+  ipcMain.handle('dm-get-messages', async (_, peerId: string, limit?: number, before?: number) => {
+    if (!agent) return [];
+    return agent.getDMMessages(peerId, limit, before);
+  });
+
+  ipcMain.handle('dm-get-conversations', async () => {
+    if (!agent) return [];
+    return agent.getDMConversations();
+  });
+
+  // ── Room IPC Handlers ─────────────────────────────────────────
+
+  ipcMain.handle('room-create', async (_, name: string, roomType?: string, accessType?: string, tokenSymbol?: string) => {
+    if (!agent) throw new Error('Agent not running');
+    return agent.createRoom(name, roomType as any, accessType as any, tokenSymbol);
+  });
+
+  ipcMain.handle('room-join', async (_, roomId: string) => {
+    if (!agent) throw new Error('Agent not running');
+    agent.joinRoom(roomId);
+    return { success: true };
+  });
+
+  ipcMain.handle('room-leave', async (_, roomId: string) => {
+    if (!agent) throw new Error('Agent not running');
+    agent.leaveRoom(roomId);
+    return { success: true };
+  });
+
+  ipcMain.handle('room-send', async (_, roomId: string, content: string) => {
+    if (!agent) throw new Error('Agent not running');
+    agent.sendRoomMessage(roomId, content);
+    return { success: true };
+  });
+
+  ipcMain.handle('room-list', async () => {
+    if (!agent) return [];
+    return agent.getRooms();
+  });
+
+  ipcMain.handle('room-get', async (_, roomId: string) => {
+    if (!agent) return null;
+    const room = agent.getRoom(roomId);
+    if (!room) return null;
+    const members = agent.getRoomMembers(roomId);
+    return { ...room, members };
+  });
+
+  ipcMain.handle('room-get-messages', async (_, roomId: string, limit?: number, before?: number) => {
+    if (!agent) return [];
+    return agent.getRoomMessages(roomId, limit, before);
+  });
+
+  ipcMain.handle('room-voice-signal', async (_, peerId: string, signal: any) => {
+    if (!agent) throw new Error('Agent not running');
+    await agent.sendRoomVoiceSignal(peerId, signal);
+  });
+
+  // ── Chat History IPC ──────────────────────────────────────────
+
+  ipcMain.handle('chat-get-history', async (_, channel?: string, limit?: number, before?: number) => {
+    if (!agent) return [];
+    return agent.getChatHistory(channel || 'global', limit, before);
   });
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "@path402/types",
+  "name": "@b0ase/path402-types",
   "version": "4.0.0-alpha.1",
   "description": "Shared TypeScript types for the path402 token exchange protocol",
   "type": "module",
