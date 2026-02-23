@@ -87,7 +87,7 @@ npx path402 agent start
 
 ### Minting a Token
 ```typescript
-import { prepareMint } from '@path402/core';
+import { prepareMint } from '@b0ase/path402-core';
 const result = prepareMint({
   symbol: '$MYTOKEN',
   issuerAddress: '1...',

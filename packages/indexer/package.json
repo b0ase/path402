@@ -1,5 +1,5 @@
 {
-    "name": "@path402/indexer",
+    "name": "@b0ase/path402-indexer",
     "version": "4.0.0-alpha.1",
     "description": "Proof-of-Work Indexer for Path402",
     "main": "dist/index.js",

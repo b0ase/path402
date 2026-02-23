@@ -1,5 +1,5 @@
 {
-  "name": "@path402/htm",
+  "name": "@b0ase/path402-htm",
   "version": "4.0.0-alpha.2",
   "description": "BRC-114 Hash-to-Mint smart contract integration for path402",
   "main": "./dist/index.js",

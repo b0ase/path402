@@ -1,5 +1,5 @@
 {
-  "name": "@path402/core",
+  "name": "@b0ase/path402-core",
   "version": "4.0.0-alpha.2",
   "description": "Core business logic for path402 - wallet, gossip, token minting, database",
   "type": "module",
@@ -84,7 +84,7 @@
     "zod": "^3.24.0"
   },
   "optionalDependencies": {
-    "@path402/htm": "workspace:*"
+    "@b0ase/path402-htm": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

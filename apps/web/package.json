@@ -1,5 +1,5 @@
 {
-  "name": "@path402/web",
+  "name": "@b0ase/path402-web",
   "version": "4.0.0-alpha.2",
   "private": true,
   "description": "Path402 Web App - $402 Client",
@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@path402/core": "workspace:*",
-    "@path402/ui": "workspace:*",
+    "@b0ase/path402-core": "workspace:*",
+    "@b0ase/path402-ui": "workspace:*",
     "@tanstack/react-query": "^5.60.0",
     "framer-motion": "^12.31.1",
     "next": "^15.0.0",

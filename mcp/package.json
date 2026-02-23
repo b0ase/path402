@@ -50,7 +50,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@path402/core": "workspace:*",
+    "@b0ase/path402-core": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

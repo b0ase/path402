@@ -14,11 +14,11 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean && rm -rf node_modules",
-    "build:core": "pnpm --filter @path402/core build",
+    "build:core": "pnpm --filter @b0ase/path402-core build",
     "build:mcp": "pnpm --filter path402 build",
-    "dev:core": "pnpm --filter @path402/core dev",
+    "dev:core": "pnpm --filter @b0ase/path402-core dev",
     "start:mcp": "pnpm --filter path402 start",
-    "dev:desktop": "lsof -ti:4020,4021,4022,4023 | xargs kill -9 2>/dev/null || true && concurrently --kill-others --raw \"pnpm --filter @path402/web dev\" \"sleep 4 && pnpm --filter @path402/desktop build && pnpm --filter @path402/desktop start\"",
+    "dev:desktop": "lsof -ti:4020,4021,4022,4023 | xargs kill -9 2>/dev/null || true && concurrently --kill-others --raw \"pnpm --filter @b0ase/path402-web dev\" \"sleep 4 && pnpm --filter @b0ase/path402-desktop build && pnpm --filter @b0ase/path402-desktop start\"",
     "generate-pdf": "tsx scripts/generate-pdf.ts"
   },
   "devDependencies": {

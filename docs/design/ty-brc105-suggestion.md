@@ -45,7 +45,7 @@
 - This is exactly what Bob Babbage asked for in the BRC-116 review (Section 6.2 now says "implementations SHOULD use BRC-105")
 
 ### Concrete Changes Needed
-1. **Server side:** Add `payment-express-middleware` to `@path402/core` GUI server
+1. **Server side:** Add `payment-express-middleware` to `@b0ase/path402-core` GUI server
 2. **Client side:** Use `AuthFetch` from `@bsv/sdk` in content requests
 3. **Wallet integration:** AuthFetch needs a BRC-100 wallet to sign payment transactions — aligns with new Section 8 (BRC-100 Wallet Separation)
 4. **Pricing:** Define `calculateRequestPrice` for content serving (could be based on content size, type, etc.)

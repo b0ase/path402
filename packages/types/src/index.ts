@@ -1,5 +1,5 @@
 /**
- * @path402/types — Canonical type definitions for the $402 token exchange protocol
+ * @b0ase/path402-types — Canonical type definitions for the $402 token exchange protocol
  *
  * Merged from:
  *   - b0ase.com/lib/path402/types.ts (core token, holding, transaction, dividends, voting, withdrawals)

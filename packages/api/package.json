@@ -1,5 +1,5 @@
 {
-  "name": "@path402/api",
+  "name": "@b0ase/path402-api",
   "version": "4.0.0-alpha.1",
   "description": "Express API server for path402",
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@path402/core": "workspace:*",
+    "@b0ase/path402-core": "workspace:*",
     "express": "^4.21.0",
     "zod": "^3.24.0"
   },

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { BSVWallet } from '@path402/core/wallet';
-import { Config } from '@path402/core';
+import { BSVWallet } from '@b0ase/path402-core/wallet';
+import { Config } from '@b0ase/path402-core';
 
 // ── Singleton ─────────────────────────────────────────────────────
 

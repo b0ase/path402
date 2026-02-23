@@ -26,7 +26,7 @@
 ### 2. Publish (Dry Run)
 
 ```typescript
-import { publishProject } from '@path402/core/publish';
+import { publishProject } from '@b0ase/path402-core/publish';
 
 const result = await publishProject({
   dir: '/path/to/your/project',

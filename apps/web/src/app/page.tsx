@@ -219,7 +219,7 @@ export default function HomePage() {
               </div>
               {!status.mining?.broadcasterConnected && (
                 <div className="mt-3 text-[9px] font-mono text-blue-600">
-                  Blocks are being mined but cannot be claimed on-chain. @path402/htm broadcaster needed.
+                  Blocks are being mined but cannot be claimed on-chain. @b0ase/path402-htm broadcaster needed.
                 </div>
               )}
             </div>

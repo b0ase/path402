@@ -1,0 +1,54 @@
+# Dockerfile for building path402 desktop client for Linux x64
+# Ensures native modules (better-sqlite3) are compiled for the correct platform.
+#
+# Usage (from monorepo root):
+#   docker build -f apps/desktop/scripts/Dockerfile.linux -t path402-linux-builder .
+#   docker run --rm -v $(pwd)/apps/desktop/release:/out path402-linux-builder
+
+FROM node:22-bookworm
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    libx11-dev \
+    libxkbfile-dev \
+    libsecret-1-dev \
+    rpm \
+    fakeroot \
+    dpkg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /build
+
+# Copy monorepo root config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+
+# Copy package manifests for dependency resolution
+COPY packages/core/package.json packages/core/
+COPY packages/htm/package.json packages/htm/
+COPY packages/indexer/package.json packages/indexer/
+COPY packages/api/package.json packages/api/
+COPY packages/ui/package.json packages/ui/
+COPY apps/web/package.json apps/web/
+COPY apps/desktop/package.json apps/desktop/
+
+# Install all dependencies (native modules compile for linux-x64 here)
+RUN pnpm install --frozen-lockfile
+
+# Copy all source files
+COPY . .
+
+# Build the web UI static export
+RUN pnpm --filter @b0ase/path402-web build 2>/dev/null || echo "Web build skipped (non-critical)"
+
+# Build the desktop app
+RUN pnpm --filter @b0ase/path402-desktop build
+
+# Package for Linux (x64 deb + AppImage)
+RUN cd apps/desktop && npx electron-builder --linux
+
+# Copy artifacts to output volume
+CMD cp -r /build/apps/desktop/release/* /out/ && echo "Build artifacts copied to /out/"

@@ -1,5 +1,5 @@
 /**
- * @path402/types/exchange — Order book exchange system types
+ * @b0ase/path402-types/exchange — Order book exchange system types
  *
  * Merged from b0ase.com/lib/exchange/types.ts
  */

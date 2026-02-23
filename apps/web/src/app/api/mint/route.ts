@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BSVWallet } from '@path402/core/wallet';
-import { Config } from '@path402/core';
-import { validateSymbol, DEFAULT_ACCESS_RATE } from '@path402/core/token';
+import { BSVWallet } from '@b0ase/path402-core/wallet';
+import { Config } from '@b0ase/path402-core';
+import { validateSymbol, DEFAULT_ACCESS_RATE } from '@b0ase/path402-core/token';
 
 // ── Types (matches MintFormData from mint page UI) ────────────────
 
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
 
         // ── Index in local pathd database (best-effort) ───────────
         try {
-            const { upsertToken } = await import('@path402/core/db');
+            const { upsertToken } = await import('@b0ase/path402-core/db');
             upsertToken({
                 token_id: tokenId,
                 name: symbol,

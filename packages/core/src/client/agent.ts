@@ -210,13 +210,13 @@ export class Path402Agent extends EventEmitter {
             : `file://${process.cwd()}/node_modules`;
           _require = createRequire(base);
         }
-        const htm: any = _require('@path402/htm');
+        const htm: any = _require('@b0ase/path402-htm');
         const htmBroadcaster = new htm.HtmBroadcaster(tokenId, walletKey);
         broadcaster = htmBroadcaster;
         if (!minerAddr) minerAddr = htmBroadcaster.getMinerAddress();
         console.log(`[Agent] HTM broadcaster ready (token: ${tokenId.slice(0, 12)}..., miner: ${minerAddr})`);
       } catch (err) {
-        console.warn('[Agent] @path402/htm not available — mint broadcasting disabled:', (err as Error).message);
+        console.warn('[Agent] @b0ase/path402-htm not available — mint broadcasting disabled:', (err as Error).message);
       }
     } else if (tokenId && !walletKey) {
       console.warn('[Agent] HTM_TOKEN_ID set but no wallet key — mint broadcasting disabled');

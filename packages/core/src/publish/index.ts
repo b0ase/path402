@@ -1,7 +1,7 @@
 /**
  * $402 Sovereign Publisher
  *
- * Re-exports for @path402/core/publish
+ * Re-exports for @b0ase/path402-core/publish
  */
 
 export { publishProject, initManifest } from './publisher.js';
