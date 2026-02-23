@@ -42,7 +42,7 @@
 - Clients would use AuthFetch instead of custom ticket presentation
 - Payment flow becomes standard HTTP 402 challenge/response
 - Interoperable with ANY BRC-105 client, not just path402
-- This is exactly what Bob Babbage asked for in the BRC-114 review (Section 6.2 now says "implementations SHOULD use BRC-105")
+- This is exactly what Bob Babbage asked for in the BRC-116 review (Section 6.2 now says "implementations SHOULD use BRC-105")
 
 ### Concrete Changes Needed
 1. **Server side:** Add `payment-express-middleware` to `@path402/core` GUI server
