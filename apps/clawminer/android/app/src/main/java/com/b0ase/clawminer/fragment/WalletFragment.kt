@@ -34,6 +34,7 @@ class WalletFragment : Fragment(), DaemonStatusListener {
 
     private lateinit var walletAddressText: TextView
     private lateinit var walletPubkeyText: TextView
+    private lateinit var walletBalanceText: TextView
     private lateinit var walletStatusText: TextView
     private lateinit var btnGenerate: Button
     private lateinit var btnImport: Button
@@ -66,6 +67,7 @@ class WalletFragment : Fragment(), DaemonStatusListener {
         forceTextFill(view)
         walletAddressText = view.findViewById(R.id.wallet_address_text)
         walletPubkeyText = view.findViewById(R.id.wallet_pubkey_text)
+        walletBalanceText = view.findViewById(R.id.wallet_balance_text)
         walletStatusText = view.findViewById(R.id.wallet_status_text)
         btnGenerate = view.findViewById(R.id.btn_generate_wallet)
         btnImport = view.findViewById(R.id.btn_import_qr)
@@ -248,12 +250,26 @@ class WalletFragment : Fragment(), DaemonStatusListener {
 
             walletAddressText.text = address.ifEmpty { "\u2014" }
             walletPubkeyText.text = pubKey.ifEmpty { "\u2014" }
+
+            // Balance display
+            if (wallet.has("balance_satoshis")) {
+                val sats = wallet.optLong("balance_satoshis", 0)
+                val bsv = sats.toDouble() / 100_000_000.0
+                walletBalanceText.text = "%.8f BSV".format(bsv)
+                if (wallet.optBoolean("low_balance", false)) {
+                    walletBalanceText.setTextColor(android.graphics.Color.parseColor("#FF3333"))
+                } else {
+                    walletBalanceText.setTextColor(android.graphics.Color.parseColor("#00CC66"))
+                }
+            }
+
             if (walletStatusText.text.isEmpty()) {
                 walletStatusText.text = if (address.isNotEmpty()) "Auto-generated keypair" else ""
             }
         } else {
             walletAddressText.text = "\u2014"
             walletPubkeyText.text = "\u2014"
+            walletBalanceText.text = "\u2014"
             walletStatusText.text = ""
         }
     }
@@ -262,6 +278,7 @@ class WalletFragment : Fragment(), DaemonStatusListener {
         if (!isAdded) return
         walletAddressText.text = "\u2014"
         walletPubkeyText.text = "\u2014"
+        walletBalanceText.text = "\u2014"
         walletStatusText.text = ""
     }
 }

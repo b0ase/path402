@@ -109,6 +109,23 @@
         </LinearLayout>
 
         <!-- ════════════════════════════════════════════
+             MINING TOGGLE BUTTON
+             ════════════════════════════════════════════ -->
+        <Button
+            android:id="@+id/mining_toggle_btn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginHorizontal="@dimen/card_margin_horizontal"
+            android:layout_marginTop="@dimen/card_margin_vertical"
+            android:background="@drawable/button_outlined_orange"
+            android:fontFamily="sans-serif"
+            android:text="Start Mining"
+            android:textColor="@color/green_active"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <!-- ════════════════════════════════════════════
              HEADER SYNC CARD
              ════════════════════════════════════════════ -->
         <LinearLayout
@@ -188,8 +205,6 @@
                 android:max="1000"
                 android:progressDrawable="@drawable/progress_bar_green" />
         </LinearLayout>
-
-    </LinearLayout>
 
         <!-- ════════════════════════════════════════════
              RECENT BLOCKS CARD

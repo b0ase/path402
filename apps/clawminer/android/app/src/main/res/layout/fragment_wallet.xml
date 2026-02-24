@@ -77,6 +77,29 @@
                 android:textSize="@dimen/text_mono_small"
                 android:textIsSelectable="true" />
 
+            <!-- Balance label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif"
+                android:text="BALANCE"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_label"
+                android:textStyle="bold" />
+
+            <!-- Balance value -->
+            <TextView
+                android:id="@+id/wallet_balance_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:text="—"
+                android:textColor="@color/green_active"
+                android:textSize="@dimen/text_body"
+                android:textStyle="bold" />
+
             <!-- Auto-generated notice -->
             <TextView
                 android:id="@+id/wallet_status_text"

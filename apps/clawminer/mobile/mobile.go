@@ -226,6 +226,24 @@ func GetBlockByHash(hash string) string {
 	return string(data)
 }
 
+// PauseMining pauses the mining loop.
+func PauseMining() {
+	mu.Lock()
+	defer mu.Unlock()
+	if d != nil {
+		d.PauseMining()
+	}
+}
+
+// ResumeMining resumes the mining loop.
+func ResumeMining() {
+	mu.Lock()
+	defer mu.Unlock()
+	if d != nil {
+		d.ResumeMining()
+	}
+}
+
 // ExportWIF returns the current wallet's WIF private key.
 // Returns JSON: {"wif":"K..."} or {"error":"..."}.
 func ExportWIF() string {

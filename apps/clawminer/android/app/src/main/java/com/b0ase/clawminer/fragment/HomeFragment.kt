@@ -19,6 +19,8 @@ class HomeFragment : Fragment(), DaemonStatusListener {
     private lateinit var peersText: TextView
     private lateinit var statusDot: View
     private lateinit var hashRateText: TextView
+    private lateinit var tokensText: TextView
+    private lateinit var blocksText: TextView
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -33,6 +35,8 @@ class HomeFragment : Fragment(), DaemonStatusListener {
         peersText = view.findViewById(R.id.peers_text)
         statusDot = view.findViewById(R.id.status_dot)
         hashRateText = view.findViewById(R.id.hash_rate_text)
+        tokensText = view.findViewById(R.id.tokens_text)
+        blocksText = view.findViewById(R.id.blocks_text)
 
         try {
             versionText.text = "v${mobile.Mobile.getVersion()}"
@@ -73,6 +77,15 @@ class HomeFragment : Fragment(), DaemonStatusListener {
         // Hash rate
         val hashRate = mining.optDouble("hash_rate", 0.0).toInt()
         hashRateText.text = "$hashRate H/s"
+
+        // Tokens discovered
+        val tokens = status.optJSONObject("tokens")
+        val tokenCount = tokens?.optInt("known", 0) ?: 0
+        tokensText.text = tokenCount.toString()
+
+        // Blocks mined
+        val blocksMined = mining.optInt("blocks_mined", 0)
+        blocksText.text = blocksMined.toString()
     }
 
     override fun onDaemonNotRunning() {
@@ -81,6 +94,8 @@ class HomeFragment : Fragment(), DaemonStatusListener {
         uptimeText.text = "\u2014"
         peersText.text = "\u2014"
         hashRateText.text = "\u2014 H/s"
+        tokensText.text = "\u2014"
+        blocksText.text = "\u2014"
     }
 
     private fun formatUptime(ms: Long): String {

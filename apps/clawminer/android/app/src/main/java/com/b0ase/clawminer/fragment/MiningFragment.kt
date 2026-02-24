@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -23,12 +24,14 @@ class MiningFragment : Fragment(), DaemonStatusListener {
     private lateinit var miningProgress: ProgressBar
     private lateinit var blocksMinedText: TextView
     private lateinit var mempoolText: TextView
+    private lateinit var miningToggleBtn: Button
     private lateinit var syncProgress: ProgressBar
     private lateinit var syncPercentText: TextView
     private lateinit var syncHeightText: TextView
     private lateinit var syncStatusLabel: TextView
     private lateinit var blocksList: LinearLayout
 
+    private var isMining = false
     private val numberFormat = NumberFormat.getNumberInstance(Locale.US)
 
     override fun onCreateView(
@@ -41,11 +44,20 @@ class MiningFragment : Fragment(), DaemonStatusListener {
         miningProgress = view.findViewById(R.id.mining_progress)
         blocksMinedText = view.findViewById(R.id.blocks_mined_text)
         mempoolText = view.findViewById(R.id.mempool_text)
+        miningToggleBtn = view.findViewById(R.id.mining_toggle_btn)
         syncProgress = view.findViewById(R.id.sync_progress)
         syncPercentText = view.findViewById(R.id.sync_percent_text)
         syncHeightText = view.findViewById(R.id.sync_height_text)
         syncStatusLabel = view.findViewById(R.id.sync_status_label)
         blocksList = view.findViewById(R.id.blocks_list)
+
+        miningToggleBtn.setOnClickListener {
+            if (isMining) {
+                Mobile.pauseMining()
+            } else {
+                Mobile.resumeMining()
+            }
+        }
     }
 
     private fun forceTextFill(v: View) {
@@ -81,10 +93,19 @@ class MiningFragment : Fragment(), DaemonStatusListener {
         val hashRate = mining.optDouble("hash_rate", 0.0).toInt()
         val blocksMined = mining.optInt("blocks_mined", 0)
         val mempoolSize = mining.optInt("mempool_size", 0)
+        isMining = mining.optBoolean("is_mining", false)
 
         blocksMinedText.text = numberFormat.format(blocksMined)
         mempoolText.text = numberFormat.format(mempoolSize)
         miningProgress.progress = hashRate.coerceAtMost(100)
+
+        if (isMining) {
+            miningToggleBtn.text = "Pause Mining"
+            miningToggleBtn.setTextColor(Color.parseColor("#f97316"))
+        } else {
+            miningToggleBtn.text = "Start Mining"
+            miningToggleBtn.setTextColor(Color.parseColor("#00CC66"))
+        }
     }
 
     private fun updateHeaderSync(headers: JSONObject) {
