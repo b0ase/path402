@@ -257,6 +257,10 @@ const dashboardHTML = `<!DOCTYPE html>
   <div class="wallet-card">
     <div class="wallet-label">Wallet Address</div>
     <div class="wallet-addr" id="walletAddr" title="Click to copy" onclick="copyAddr()">--</div>
+    <div id="walletBalance" style="font-family: 'SF Mono', monospace; font-size: 14px; color: var(--text-dim); margin-top: 8px;"></div>
+    <div id="lowBalanceAlert" style="display:none; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); font-size: 12px; color: #ef4444;">
+      Low balance — fund this wallet to continue minting on-chain
+    </div>
     <div class="wallet-sub" id="nodeId"></div>
   </div>
 
@@ -372,6 +376,19 @@ async function poll() {
     $('peerCount').textContent = status.peers ? status.peers.connected : '--';
     if (status.node_id) {
       $('nodeId').textContent = 'Node ' + status.node_id.substring(0, 16) + '...';
+    }
+    if (status.wallet) {
+      const bal = status.wallet.balance_satoshis;
+      if (bal != null) {
+        const bsv = (bal / 1e8).toFixed(8);
+        $('walletBalance').textContent = bal.toLocaleString() + ' sat (' + bsv + ' BSV)';
+      }
+      const alert = $('lowBalanceAlert');
+      if (status.wallet.low_balance) {
+        alert.style.display = 'block';
+      } else {
+        alert.style.display = 'none';
+      }
     }
   }
 

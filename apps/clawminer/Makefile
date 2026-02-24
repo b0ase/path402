@@ -1,10 +1,10 @@
 BINARY     := clawminerd
-VERSION    := 0.2.0
+VERSION    := 0.3.0
 BUILD_DIR  := ./build
 LDFLAGS    := -ldflags "-s -w -X main.Version=$(VERSION)"
 CGO        := CGO_ENABLED=1
 
-.PHONY: all build clean test run release checksums install-gomobile bind-android bind-ios
+.PHONY: all build build-tray clean test run release checksums install-gomobile bind-android bind-ios build-desktop
 
 all: build
 
@@ -29,6 +29,18 @@ build-windows-amd64:
 build-android:
 	GOOS=android GOARCH=arm64 $(CGO) CC=$(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
 		go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-android-arm64 ./cmd/clawminerd/
+
+build-tray:
+	$(CGO) go build $(LDFLAGS) -o $(BUILD_DIR)/clawminer-tray ./cmd/clawminer-tray/
+
+build-tray-darwin-arm64:
+	GOOS=darwin GOARCH=arm64 $(CGO) go build $(LDFLAGS) -o $(BUILD_DIR)/clawminer-tray-darwin-arm64 ./cmd/clawminer-tray/
+
+build-tray-linux-amd64:
+	GOOS=linux GOARCH=amd64 $(CGO) CC=x86_64-linux-musl-gcc go build $(LDFLAGS) -o $(BUILD_DIR)/clawminer-tray-linux-amd64 ./cmd/clawminer-tray/
+
+build-desktop: build build-tray
+	@bash scripts/build-desktop.sh macos
 
 # Build all release targets (run on CI or locally with cross-compilers)
 release: clean

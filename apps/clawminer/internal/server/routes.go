@@ -17,12 +17,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/portfolio", s.handlePortfolio)
 	mux.HandleFunc("GET /api/peers", s.handlePeers)
 	mux.HandleFunc("GET /api/mining/status", s.handleMiningStatus)
+	mux.HandleFunc("POST /api/mining/start", s.handleMiningStart)
+	mux.HandleFunc("POST /api/mining/stop", s.handleMiningStop)
 	mux.HandleFunc("GET /api/headers/status", s.handleHeadersStatus)
 	mux.HandleFunc("GET /api/headers/tip", s.handleHeadersTip)
 	mux.HandleFunc("GET /api/headers/verify", s.handleHeadersVerify)
 	mux.HandleFunc("GET /api/blocks", s.handleBlocks)
 	mux.HandleFunc("GET /api/blocks/latest", s.handleBlockLatest)
 	mux.HandleFunc("GET /api/blocks/count", s.handleBlockCount)
+	mux.HandleFunc("GET /api/wallet/balance", s.handleWalletBalance)
 	mux.HandleFunc("GET /api/blocks/{hash}", s.handleBlockByHash)
 }
 
@@ -73,6 +76,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"known": tokenCount,
 		},
 		"mining":  s.daemon.MiningStatus(),
+		"wallet":  s.daemon.WalletStatus(),
 		"headers": s.daemon.HeaderSyncStatus(),
 	}
 
@@ -127,6 +131,16 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMiningStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.daemon.MiningStatus())
+}
+
+func (s *Server) handleMiningStart(w http.ResponseWriter, r *http.Request) {
+	s.daemon.ResumeMining()
+	writeJSON(w, map[string]interface{}{"status": "mining", "paused": false})
+}
+
+func (s *Server) handleMiningStop(w http.ResponseWriter, r *http.Request) {
+	s.daemon.PauseMining()
+	writeJSON(w, map[string]interface{}{"status": "paused", "paused": true})
 }
 
 func (s *Server) handleHeadersStatus(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +222,10 @@ func (s *Server) handleBlockCount(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 		"own":   own,
 	})
+}
+
+func (s *Server) handleWalletBalance(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.daemon.WalletStatus())
 }
 
 func (s *Server) handleBlockByHash(w http.ResponseWriter, r *http.Request) {
