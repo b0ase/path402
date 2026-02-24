@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Base dark background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF0A0A0A" />
+        </shape>
+    </item>
+    <!-- Radial orange glow in center -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="300dp"
+                android:startColor="#1AFF6600"
+                android:endColor="#000A0A0A"
+                android:centerX="0.5"
+                android:centerY="0.4" />
+            <size
+                android:width="600dp"
+                android:height="600dp" />
+        </shape>
+    </item>
+</layer-list>

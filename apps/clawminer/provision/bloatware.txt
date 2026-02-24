@@ -1,0 +1,60 @@
+# ClawMiner — DOOGEE Fire 3 Ultra bloatware to disable
+# These are disabled (not uninstalled) so they can be restored if needed
+# Format: one package name per line, # for comments
+
+# === Google Entertainment (not needed on mining device) ===
+# com.google.android.youtube  ← KEEP: user requested
+# com.google.android.apps.youtube.music  ← KEEP: user requested
+com.google.android.videos
+com.google.android.play.games
+com.google.android.apps.maps
+com.google.android.apps.photos
+com.google.android.apps.docs
+com.google.android.apps.bard
+com.google.android.apps.tachyon
+com.google.android.projection.gearhead
+
+# === Google Productivity (not needed) ===
+com.google.android.calendar
+com.google.android.gm
+com.google.android.keep
+com.google.android.apps.nbu.files
+
+# === Entertainment/Media ===
+com.android.fmradio
+com.android.musicfx
+com.android.dreams.phototable
+com.android.dreams.basic
+com.android.soundrecorder
+
+# === DOOGEE/Unisoc specific ===
+com.doogee.update
+com.yk.phonetest
+com.yk.factorytest
+com.odm.tool
+com.sprd.camta
+com.sprd.engineermode
+com.sprd.logmanager
+com.sprd.omacp
+com.sprd.powersavemodelauncher
+
+# === Miscellaneous ===
+# com.android.chrome  ← KEEP: useful for debugging/web access
+com.android.egg
+com.android.bookmarkprovider
+com.android.gallery3d
+com.android.traceur
+com.android.DeviceAsWebcam
+com.android.wallpaper.livepicker
+com.google.android.apps.wellbeing
+com.google.android.apps.turbo
+com.google.android.apps.safetyhub
+com.google.android.feedback
+com.google.android.apps.adm
+com.google.android.tag
+com.google.android.marvin.talkback
+com.google.android.accessibility.switchaccess
+com.google.android.printservice.recommendation
+com.android.bips
+com.android.printspooler
+com.android.avatarpicker

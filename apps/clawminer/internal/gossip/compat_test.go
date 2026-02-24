@@ -18,11 +18,13 @@ func TestCompat_TopicNames(t *testing.T) {
 		"$402/stamps/v1":    true,
 		"$402/chat/v1":      true,
 		"$402/content/v1":   true,
+		"$402/blocks/v1":    true,
+		"$402/relay/v1":     true,
 	}
 
 	topics := AllTopics()
-	if len(topics) != 5 {
-		t.Fatalf("AllTopics() returned %d topics, want 5", len(topics))
+	if len(topics) != 7 {
+		t.Fatalf("AllTopics() returned %d topics, want 7", len(topics))
 	}
 
 	for _, topic := range topics {
@@ -39,6 +41,10 @@ func TestCompat_TopicForType(t *testing.T) {
 		MsgTicketStamp:    "$402/stamps/v1",
 		MsgChatMessage:    "$402/chat/v1",
 		MsgContentRequest: "$402/content/v1",
+		MsgBlockAnnounce:  "$402/blocks/v1",
+		MsgTxRelay:        "$402/relay/v1",
+		MsgTxRequest:      "$402/relay/v1",
+		MsgTxResponse:     "$402/relay/v1",
 		MsgHello:          "$402/tokens/v1", // default
 		MsgPing:           "$402/tokens/v1", // default
 	}
@@ -52,18 +58,20 @@ func TestCompat_TopicForType(t *testing.T) {
 }
 
 func TestCompat_MessageTypes(t *testing.T) {
-	// All 15 message types must exist and be valid
+	// All 19 message types must exist and be valid
 	allTypes := []MessageType{
 		MsgHello, MsgHelloAck, MsgPeerListRequest, MsgPeerList,
 		MsgAnnounceToken, MsgRequestToken, MsgTokenData,
 		MsgTransferEvent, MsgHolderUpdate,
 		MsgContentRequest, MsgContentOffer,
 		MsgTicketStamp, MsgChatMessage,
+		MsgBlockAnnounce,
+		MsgTxRelay, MsgTxRequest, MsgTxResponse,
 		MsgPing, MsgPong,
 	}
 
-	if len(allTypes) != 15 {
-		t.Errorf("expected 15 message types, got %d", len(allTypes))
+	if len(allTypes) != 19 {
+		t.Errorf("expected 19 message types, got %d", len(allTypes))
 	}
 
 	for _, mt := range allTypes {

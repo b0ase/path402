@@ -10,10 +10,23 @@ import (
 // WorkSubmitter is called to feed validated gossip events into the mining pipeline.
 type WorkSubmitter func(id, workType string, data interface{})
 
+// BlockObserver is called when a block announcement is received from a peer.
+// The daemon uses this to verify the block and feed it to the difficulty adjuster.
+type BlockObserver func(senderID string, payload *BlockAnnouncePayload)
+
+// TxRelayObserver is called when a TX_RELAY message is received from a peer.
+type TxRelayObserver func(senderID string, payload *TxRelayPayload)
+
+// TxRequestObserver is called when a TX_REQUEST message is received from a peer.
+type TxRequestObserver func(senderID string, payload *TxRequestPayload)
+
 // Handler dispatches incoming gossip messages to the appropriate db operations.
 type Handler struct {
-	nodeID        string
-	submitWork    WorkSubmitter
+	nodeID            string
+	submitWork        WorkSubmitter
+	blockObserver     BlockObserver
+	txRelayObserver   TxRelayObserver
+	txRequestObserver TxRequestObserver
 }
 
 func NewHandler(nodeID string) *Handler {
@@ -23,6 +36,21 @@ func NewHandler(nodeID string) *Handler {
 // SetWorkSubmitter wires the gossip handler to the mining service.
 func (h *Handler) SetWorkSubmitter(fn WorkSubmitter) {
 	h.submitWork = fn
+}
+
+// SetBlockObserver registers a callback for block announcements from peers.
+func (h *Handler) SetBlockObserver(fn BlockObserver) {
+	h.blockObserver = fn
+}
+
+// SetTxRelayObserver registers a callback for TX_RELAY messages from peers.
+func (h *Handler) SetTxRelayObserver(fn TxRelayObserver) {
+	h.txRelayObserver = fn
+}
+
+// SetTxRequestObserver registers a callback for TX_REQUEST messages from peers.
+func (h *Handler) SetTxRequestObserver(fn TxRequestObserver) {
+	h.txRequestObserver = fn
 }
 
 // HandleMessage processes an incoming GossipMessage.
@@ -38,6 +66,12 @@ func (h *Handler) HandleMessage(msg *GossipMessage) {
 		h.handleTicketStamp(msg)
 	case MsgChatMessage:
 		h.handleChat(msg)
+	case MsgBlockAnnounce:
+		h.handleBlockAnnounce(msg)
+	case MsgTxRelay:
+		h.handleTxRelay(msg)
+	case MsgTxRequest:
+		h.handleTxRequest(msg)
 	case MsgPing:
 		h.handlePing(msg)
 	default:
@@ -151,6 +185,57 @@ func (h *Handler) handleChat(msg *GossipMessage) {
 		handle = payload.SenderAddress[:8]
 	}
 	log.Printf("[gossip] Chat [%s] %s: %s", payload.Channel, handle, payload.Content)
+}
+
+func (h *Handler) handleBlockAnnounce(msg *GossipMessage) {
+	var payload BlockAnnouncePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad BLOCK_ANNOUNCE payload: %v", err)
+		return
+	}
+
+	log.Printf("[gossip] Block from %s: %s (height %d, difficulty %d, %d items)",
+		msg.SenderID[:min(16, len(msg.SenderID))], payload.Hash[:min(16, len(payload.Hash))],
+		payload.Height, payload.Bits, payload.ItemCount)
+
+	if h.blockObserver != nil {
+		h.blockObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleTxRelay(msg *GossipMessage) {
+	var payload TxRelayPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad TX_RELAY payload: %v", err)
+		return
+	}
+	txidShort := payload.Txid
+	if len(txidShort) > 16 {
+		txidShort = txidShort[:16]
+	}
+	log.Printf("[gossip] TX_RELAY: %s... from %s (source: %s)",
+		txidShort, msg.SenderID[:min(8, len(msg.SenderID))], payload.Source)
+
+	if h.txRelayObserver != nil {
+		h.txRelayObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleTxRequest(msg *GossipMessage) {
+	var payload TxRequestPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad TX_REQUEST payload: %v", err)
+		return
+	}
+	txidShort := payload.Txid
+	if len(txidShort) > 16 {
+		txidShort = txidShort[:16]
+	}
+	log.Printf("[gossip] TX_REQUEST: %s... from %s", txidShort, msg.SenderID[:min(8, len(msg.SenderID))])
+
+	if h.txRequestObserver != nil {
+		h.txRequestObserver(msg.SenderID, &payload)
+	}
 }
 
 func (h *Handler) handlePing(msg *GossipMessage) {

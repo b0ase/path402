@@ -27,6 +27,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/blocks/count", s.handleBlockCount)
 	mux.HandleFunc("GET /api/wallet/balance", s.handleWalletBalance)
 	mux.HandleFunc("GET /api/blocks/{hash}", s.handleBlockByHash)
+
+	// SPV Relay Mesh routes
+	if s.relaySvc != nil {
+		s.relaySvc.RegisterRoutes(mux)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

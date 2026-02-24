@@ -1,3 +1,5 @@
+//go:build !android
+
 package anet
 
 import "net"

@@ -62,6 +62,11 @@ export enum MessageType {
   // Block announcements (PoI mining)
   BLOCK_ANNOUNCE = 'BLOCK_ANNOUNCE',
 
+  // Transaction relay (SPV Relay Mesh)
+  TX_RELAY = 'TX_RELAY',
+  TX_REQUEST = 'TX_REQUEST',
+  TX_RESPONSE = 'TX_RESPONSE',
+
   // Ping/Pong for keepalive
   PING = 'PING',
   PONG = 'PONG'
@@ -344,6 +349,25 @@ export interface BlockAnnouncePayload {
   item_count: number;
 }
 
+// ── TX Relay Payloads (SPV Relay Mesh) ────────────────────────────
+
+export interface TxRelayPayload {
+  txid: string;
+  raw_hex: string;
+  source: 'local' | 'peer';
+}
+
+export interface TxRequestPayload {
+  txid: string;
+}
+
+export interface TxResponsePayload {
+  txid: string;
+  raw_hex: string | null;
+  confirmed: boolean;
+  block_hash?: string;
+}
+
 // ── Message Envelope ───────────────────────────────────────────────
 
 export interface GossipMessage<T = unknown> {
@@ -450,6 +474,18 @@ export function createChatMessage(nodeId: string, chat: ChatPayload): GossipMess
 
 export function createBlockAnnounce(nodeId: string, block: BlockAnnouncePayload): GossipMessage<BlockAnnouncePayload> {
   return createMessage(MessageType.BLOCK_ANNOUNCE, nodeId, block);
+}
+
+export function createTxRelay(nodeId: string, txid: string, rawHex: string, source: 'local' | 'peer' = 'local'): GossipMessage<TxRelayPayload> {
+  return createMessage(MessageType.TX_RELAY, nodeId, { txid, raw_hex: rawHex, source });
+}
+
+export function createTxRequest(nodeId: string, txid: string): GossipMessage<TxRequestPayload> {
+  return createMessage(MessageType.TX_REQUEST, nodeId, { txid });
+}
+
+export function createTxResponse(nodeId: string, txid: string, rawHex: string | null, confirmed: boolean, blockHash?: string): GossipMessage<TxResponsePayload> {
+  return createMessage(MessageType.TX_RESPONSE, nodeId, { txid, raw_hex: rawHex, confirmed, block_hash: blockHash });
 }
 
 // ── Message Validation ─────────────────────────────────────────────

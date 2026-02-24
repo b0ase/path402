@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>ClawMiner needs camera access to scan WIF QR codes for wallet import.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ClawMiner uses the local network for mDNS peer discovery.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_p2p._tcp</string>
+		<string>_p2p._udp</string>
+	</array>
+</dict>
+</plist>

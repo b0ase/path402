@@ -133,6 +133,20 @@ export type { MarketplaceData, MarketplaceToken, MarketplaceStats } from "./serv
 export { CallSignalType } from "./gossip/protocol.js";
 export type { CallSignalMessage, CallOfferPayload, CallAnswerPayload, CallRejectPayload, CallHangupPayload, IceCandidatePayload } from "./gossip/protocol.js";
 
+// Cashboard bridge
+export type {
+  ExecuteStepRequest,
+  ExecuteStepResponse,
+  SSEEvent,
+  CashboardWorkflow,
+  WorkflowRun,
+  WorkflowStep,
+  WorkflowRunStatus,
+  WorkflowStepStatus,
+  WorkflowRunnerConfig,
+} from "./cashboard/types.js";
+export { CashboardRunner } from "./cashboard/runner.js";
+
 // Config exports
 export { Config } from "./pathd/config.js";
 export type { PathDConfig } from "./pathd/config.js";

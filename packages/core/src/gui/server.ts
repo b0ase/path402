@@ -14,6 +14,11 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 import express, { Request, Response, NextFunction } from 'express';
 import { Path402Agent } from '../client/agent.js';
+import { CashboardSSE } from '../cashboard/sse.js';
+import { CashboardExecutor } from '../cashboard/executor.js';
+import { CashboardRunner } from '../cashboard/runner.js';
+import { NODE_ACTION_MAP, AVAILABLE_ACTIONS } from '../cashboard/types.js';
+import type { ExecuteStepRequest, CashboardWorkflow } from '../cashboard/types.js';
 import {
   getAllTokens,
   getPortfolio,
@@ -23,7 +28,11 @@ import {
   getAllCachedContent,
   getContentCacheStats,
   getContentByHash,
-  logServe
+  logServe,
+  getActiveCashboardRun,
+  getCashboardRun,
+  getCashboardStepsByRun,
+  getAllCashboardRuns,
 } from '../db/index.js';
 
 // BRC-105 imports — used conditionally when walletKey is present
@@ -55,6 +64,9 @@ export class GUIServer {
   private server: Server | null = null;
   private uiPath: string | null = null;
   private walletKey: string | undefined;
+  private cashboardSSE: CashboardSSE | null = null;
+  private cashboardExecutor: CashboardExecutor | null = null;
+  private cashboardRunner: CashboardRunner | null = null;
 
   constructor(agent: Path402Agent, port = 4021, uiPath: string | null = null, walletKey?: string) {
     this.agent = agent;
@@ -201,10 +213,251 @@ export class GUIServer {
       res.json({ success: true, message: 'Restart initiated' });
     });
 
+    // ── DM Routes ──────────────────────────────────────────────────
+
+    app.get('/api/dm/conversations', (_req: Request, res: Response) => {
+      try {
+        res.json(this.agent.getDMConversations());
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get('/api/dm/:peerId/messages', (req: Request, res: Response) => {
+      const peerId = req.params.peerId as string;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const before = req.query.before ? parseInt(req.query.before as string) : undefined;
+      try {
+        const messages = this.agent.getDMMessages(peerId, limit, before);
+        res.json(messages);
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/dm/:peerId/send', async (req: Request, res: Response) => {
+      const peerId = req.params.peerId as string;
+      const { content } = req.body;
+      if (!content) {
+        res.status(400).json({ error: 'Missing content' });
+        return;
+      }
+      try {
+        await this.agent.sendDM(peerId, content);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    // ── Room Routes ─────────────────────────────────────────────────
+
+    app.get('/api/rooms', (_req: Request, res: Response) => {
+      try {
+        res.json(this.agent.getRooms());
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/rooms', async (req: Request, res: Response) => {
+      const { name, roomType, accessType, tokenSymbol } = req.body;
+      if (!name) {
+        res.status(400).json({ error: 'Missing name' });
+        return;
+      }
+      try {
+        const room = await this.agent.createRoom(name, roomType, accessType, tokenSymbol);
+        res.json(room);
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get('/api/rooms/:roomId', (req: Request, res: Response) => {
+      const roomId = req.params.roomId as string;
+      try {
+        const room = this.agent.getRoom(roomId);
+        if (!room) {
+          res.status(404).json({ error: 'Room not found' });
+          return;
+        }
+        const members = this.agent.getRoomMembers(roomId);
+        res.json({ ...room, members });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/rooms/:roomId/join', (req: Request, res: Response) => {
+      const roomId = req.params.roomId as string;
+      try {
+        this.agent.joinRoom(roomId);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/rooms/:roomId/leave', (req: Request, res: Response) => {
+      const roomId = req.params.roomId as string;
+      try {
+        this.agent.leaveRoom(roomId);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/rooms/:roomId/send', (req: Request, res: Response) => {
+      const roomId = req.params.roomId as string;
+      const { content } = req.body;
+      if (!content) {
+        res.status(400).json({ error: 'Missing content' });
+        return;
+      }
+      try {
+        this.agent.sendRoomMessage(roomId, content);
+        res.json({ success: true });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get('/api/rooms/:roomId/messages', (req: Request, res: Response) => {
+      const roomId = req.params.roomId as string;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const before = req.query.before ? parseInt(req.query.before as string) : undefined;
+      try {
+        res.json(this.agent.getRoomMessages(roomId, limit, before));
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    // ── Chat History Route ──────────────────────────────────────────
+
+    app.get('/api/chat/history', (req: Request, res: Response) => {
+      const channel = (req.query.channel as string) || 'global';
+      const limit = parseInt(req.query.limit as string) || 50;
+      const before = req.query.before ? parseInt(req.query.before as string) : undefined;
+      try {
+        res.json(this.agent.getChatHistory(channel, limit, before));
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
     // Content serve — the paid route
     app.get('/api/content/serve/:hash', async (req: Request, res: Response) => {
       const hash = req.params.hash as string;
       await this.handleContentServe(hash, req, res);
+    });
+
+    // ── Cashboard Bridge Routes ───────────────────────────────────
+
+    this.cashboardSSE = new CashboardSSE(this.agent);
+    this.cashboardExecutor = new CashboardExecutor(this.agent);
+
+    // SSE event stream for real-time agent events
+    app.get('/api/cashboard/events', (req: Request, res: Response) => {
+      this.cashboardSSE!.addClient(res);
+    });
+
+    // Execute a single workflow step
+    app.post('/api/cashboard/execute', async (req: Request, res: Response) => {
+      const body = req.body as ExecuteStepRequest;
+      if (!body || !body.node || !body.executionId) {
+        res.status(400).json({ error: 'Missing required fields: executionId, node' });
+        return;
+      }
+      const result = await this.cashboardExecutor!.execute(body);
+      res.json(result);
+    });
+
+    // Introspection: which node types map to which actions
+    app.get('/api/cashboard/actions', (_req: Request, res: Response) => {
+      res.json({
+        nodeActionMap: NODE_ACTION_MAP,
+        availableActions: AVAILABLE_ACTIONS,
+      });
+    });
+
+    // ── Cashboard Workflow Runner Routes ───────────────────────────
+
+    this.cashboardRunner = new CashboardRunner(
+      this.cashboardExecutor!,
+      this.cashboardSSE!
+    );
+
+    // List recent runs (register before /:runId to avoid param capture)
+    app.get('/api/cashboard/workflow/runs', (req: Request, res: Response) => {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const runs = getAllCashboardRuns(limit);
+      res.json({ runs });
+    });
+
+    // Start a workflow run
+    app.post('/api/cashboard/workflow/run', async (req: Request, res: Response) => {
+      const body = req.body as CashboardWorkflow;
+      if (!body || !body.id || !body.nodes || !body.connections) {
+        res.status(400).json({ error: 'Missing required fields: id, nodes, connections' });
+        return;
+      }
+      // Max 1 concurrent run
+      const active = getActiveCashboardRun();
+      if (active) {
+        res.status(409).json({
+          error: 'A workflow is already running',
+          activeRunId: active.id,
+        });
+        return;
+      }
+      try {
+        const runId = await this.cashboardRunner!.run(body);
+        res.json({ runId, status: 'running' });
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error });
+      }
+    });
+
+    // Pause active run
+    app.post('/api/cashboard/workflow/:runId/pause', (req: Request, res: Response) => {
+      const runId = req.params.runId as string;
+      this.cashboardRunner!.pause(runId);
+      res.json({ runId, status: 'paused' });
+    });
+
+    // Resume paused run
+    app.post('/api/cashboard/workflow/:runId/resume', (req: Request, res: Response) => {
+      const runId = req.params.runId as string;
+      this.cashboardRunner!.resume(runId);
+      res.json({ runId, status: 'running' });
+    });
+
+    // Execute one node (step mode)
+    app.post('/api/cashboard/workflow/:runId/step', async (req: Request, res: Response) => {
+      const runId = req.params.runId as string;
+      try {
+        const result = await this.cashboardRunner!.step(runId);
+        res.json({ runId, step: result });
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error });
+      }
+    });
+
+    // Get run status + all step results
+    app.get('/api/cashboard/workflow/:runId', (req: Request, res: Response) => {
+      const runId = req.params.runId as string;
+      const run = getCashboardRun(runId);
+      if (!run) {
+        res.status(404).json({ error: 'Run not found' });
+        return;
+      }
+      const steps = getCashboardStepsByRun(runId);
+      res.json({ run, steps });
     });
 
     // ── Static Files + SPA Fallback ──────────────────────────────
@@ -248,6 +501,12 @@ export class GUIServer {
   }
 
   stop(): void {
+    if (this.cashboardSSE) {
+      this.cashboardSSE.destroy();
+      this.cashboardSSE = null;
+    }
+    this.cashboardExecutor = null;
+    this.cashboardRunner = null;
     this.server?.close();
   }
 

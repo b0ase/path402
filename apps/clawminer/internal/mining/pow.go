@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 )
@@ -62,6 +63,36 @@ func MineBlock(header *BlockHeader, maxIterations int) *PoWSolution {
 		hash := CalculateBlockHash(header)
 		if CheckDifficulty(hash, header.Bits) {
 			// Return a copy
+			solved := *header
+			return &PoWSolution{Header: solved, Hash: hash}
+		}
+	}
+	return nil
+}
+
+// CheckTarget returns true if hash (hex string) is <= target (big.Int).
+// This is more precise than CheckDifficulty — it allows fine-grained
+// difficulty adjustment rather than 16x jumps between integer levels.
+func CheckTarget(hash string, target *big.Int) bool {
+	h := new(big.Int)
+	h.SetString(hash, 16)
+	return h.Cmp(target) <= 0
+}
+
+// MineBlockWithTarget tries maxIterations nonces against a big.Int target.
+// Used when a DifficultyAdjuster provides fine-grained difficulty control.
+func MineBlockWithTarget(header *BlockHeader, target *big.Int, maxIterations int) *PoWSolution {
+	nonce := header.Nonce
+
+	for i := 0; i < maxIterations; i++ {
+		header.Nonce = nonce + i
+
+		if i%10000 == 0 {
+			header.Timestamp = time.Now().UnixMilli()
+		}
+
+		hash := CalculateBlockHash(header)
+		if CheckTarget(hash, target) {
 			solved := *header
 			return &PoWSolution{Header: solved, Hash: hash}
 		}

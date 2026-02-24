@@ -1,0 +1,8 @@
+framework module "Clawminer" {
+	header "ref.h"
+    header "Mobile.objc.h"
+    header "Universe.objc.h"
+    header "Clawminer.h"
+
+    export *
+}

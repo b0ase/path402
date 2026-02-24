@@ -86,6 +86,79 @@ contextBridge.exposeInMainWorld('path402', {
     ipcRenderer.removeAllListeners('call-incoming-signal');
   },
 
+  // ── DM IPC ──────────────────────────────────────────────
+
+  sendDM: (peerId: string, content: string) =>
+    ipcRenderer.invoke('dm-send', peerId, content),
+
+  getDMMessages: (peerId: string, limit?: number, before?: number) =>
+    ipcRenderer.invoke('dm-get-messages', peerId, limit, before),
+
+  getDMConversations: () =>
+    ipcRenderer.invoke('dm-get-conversations'),
+
+  onDMReceived: (callback: (remotePeer: string, payload: any) => void) => {
+    ipcRenderer.on('dm-incoming', (_, remotePeer, payload) => callback(remotePeer, payload));
+  },
+
+  removeDMListener: () => {
+    ipcRenderer.removeAllListeners('dm-incoming');
+  },
+
+  // ── Room IPC ──────────────────────────────────────────────
+
+  createRoom: (name: string, roomType?: string, accessType?: string, tokenSymbol?: string) =>
+    ipcRenderer.invoke('room-create', name, roomType, accessType, tokenSymbol),
+
+  joinRoom: (roomId: string) =>
+    ipcRenderer.invoke('room-join', roomId),
+
+  leaveRoom: (roomId: string) =>
+    ipcRenderer.invoke('room-leave', roomId),
+
+  sendRoomMessage: (roomId: string, content: string) =>
+    ipcRenderer.invoke('room-send', roomId, content),
+
+  getRooms: () =>
+    ipcRenderer.invoke('room-list'),
+
+  getRoom: (roomId: string) =>
+    ipcRenderer.invoke('room-get', roomId),
+
+  getRoomMessages: (roomId: string, limit?: number, before?: number) =>
+    ipcRenderer.invoke('room-get-messages', roomId, limit, before),
+
+  sendRoomVoiceSignal: (peerId: string, signal: any) =>
+    ipcRenderer.invoke('room-voice-signal', peerId, signal),
+
+  onRoomMessage: (callback: (payload: any) => void) => {
+    ipcRenderer.on('room-message', (_, payload) => callback(payload));
+  },
+
+  onRoomAnnounced: (callback: (payload: any) => void) => {
+    ipcRenderer.on('room-announced', (_, payload) => callback(payload));
+  },
+
+  onRoomMemberJoined: (callback: (payload: any) => void) => {
+    ipcRenderer.on('room-member-joined', (_, payload) => callback(payload));
+  },
+
+  onRoomMemberLeft: (callback: (payload: any) => void) => {
+    ipcRenderer.on('room-member-left', (_, payload) => callback(payload));
+  },
+
+  removeRoomListeners: () => {
+    ipcRenderer.removeAllListeners('room-message');
+    ipcRenderer.removeAllListeners('room-announced');
+    ipcRenderer.removeAllListeners('room-member-joined');
+    ipcRenderer.removeAllListeners('room-member-left');
+  },
+
+  // ── Chat History IPC ──────────────────────────────────────
+
+  getChatHistory: (channel?: string, limit?: number, before?: number) =>
+    ipcRenderer.invoke('chat-get-history', channel, limit, before),
+
   // Platform info
   platform: process.platform,
   version: process.env.npm_package_version || '1.0.0',
@@ -122,6 +195,28 @@ declare global {
       getCallPeerId: () => Promise<string | null>;
       onCallSignal: (callback: (remotePeer: string, signal: any) => void) => void;
       removeCallSignalListener: () => void;
+      // DM
+      sendDM: (peerId: string, content: string) => Promise<{ success: boolean }>;
+      getDMMessages: (peerId: string, limit?: number, before?: number) => Promise<any[]>;
+      getDMConversations: () => Promise<Array<{ peer_id: string; last_message: string; last_timestamp: number; unread_count: number }>>;
+      onDMReceived: (callback: (remotePeer: string, payload: any) => void) => void;
+      removeDMListener: () => void;
+      // Room
+      createRoom: (name: string, roomType?: string, accessType?: string, tokenSymbol?: string) => Promise<any>;
+      joinRoom: (roomId: string) => Promise<{ success: boolean }>;
+      leaveRoom: (roomId: string) => Promise<{ success: boolean }>;
+      sendRoomMessage: (roomId: string, content: string) => Promise<{ success: boolean }>;
+      getRooms: () => Promise<any[]>;
+      getRoom: (roomId: string) => Promise<any>;
+      getRoomMessages: (roomId: string, limit?: number, before?: number) => Promise<any[]>;
+      sendRoomVoiceSignal: (peerId: string, signal: any) => Promise<void>;
+      onRoomMessage: (callback: (payload: any) => void) => void;
+      onRoomAnnounced: (callback: (payload: any) => void) => void;
+      onRoomMemberJoined: (callback: (payload: any) => void) => void;
+      onRoomMemberLeft: (callback: (payload: any) => void) => void;
+      removeRoomListeners: () => void;
+      // Chat History
+      getChatHistory: (channel?: string, limit?: number, before?: number) => Promise<any[]>;
       platform: string;
       version: string;
       isElectron: boolean;

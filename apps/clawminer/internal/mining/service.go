@@ -30,26 +30,37 @@ type MintClaimedEvent struct {
 	Txid       string
 	Amount     int64
 	MerkleRoot string
+	BlockHash  string
 }
 
 // MintClaimedHandler is called when a mint is claimed on-chain.
 type MintClaimedHandler func(event MintClaimedEvent)
 
+// BlockAnnouncer is called when a block is mined and should be broadcast to the network.
+type BlockAnnouncer func(block *IndexerBlock, height int)
+
+// BlockStorageCallback is called when a block should be persisted to the database.
+type BlockStorageCallback func(block *IndexerBlock, height int, isOwn bool)
+
 // ProofOfIndexingService manages the Work -> Mine -> Broadcast -> Claim lifecycle.
 type ProofOfIndexingService struct {
-	config        ServiceConfig
-	mempool       *IndexerMempool
-	isMining      bool
-	mu            sync.Mutex
-	lastBlockHash string
-	blocksMined   int
-	totalHashes   int64
-	startTime     time.Time
-	onBlock       BlockHandler
-	onMintClaimed MintClaimedHandler
-	broadcaster   MintBroadcaster
-	claimConfig   ClaimConfig
-	stopCh        chan struct{}
+	config             ServiceConfig
+	mempool            *IndexerMempool
+	isMining           bool
+	mu                 sync.Mutex
+	lastBlockHash      string
+	blocksMined        int
+	totalHashes        int64
+	startTime          time.Time
+	onBlock            BlockHandler
+	onMintClaimed      MintClaimedHandler
+	broadcaster        MintBroadcaster
+	claimConfig        ClaimConfig
+	stopCh             chan struct{}
+	difficultyAdjuster *DifficultyAdjuster
+	blockAnnouncer     BlockAnnouncer
+	blockStorage       BlockStorageCallback
+	paused             bool
 }
 
 // NewProofOfIndexingService creates a new mining service.
@@ -68,6 +79,36 @@ func NewProofOfIndexingService(cfg ServiceConfig) *ProofOfIndexingService {
 // SetBroadcaster configures the mint broadcaster.
 func (s *ProofOfIndexingService) SetBroadcaster(b MintBroadcaster) {
 	s.broadcaster = b
+}
+
+// SetDifficultyAdjuster enables dynamic difficulty adjustment.
+// When set, the miner uses the adjuster's target instead of the static config difficulty.
+func (s *ProofOfIndexingService) SetDifficultyAdjuster(da *DifficultyAdjuster) {
+	s.difficultyAdjuster = da
+}
+
+// SetBlockAnnouncer registers a callback to announce mined blocks to the network.
+func (s *ProofOfIndexingService) SetBlockAnnouncer(fn BlockAnnouncer) {
+	s.blockAnnouncer = fn
+}
+
+// SetBlockStorage registers a callback to persist blocks to the database.
+func (s *ProofOfIndexingService) SetBlockStorage(fn BlockStorageCallback) {
+	s.blockStorage = fn
+}
+
+// SetLastBlockHash restores the chain tip hash on startup.
+func (s *ProofOfIndexingService) SetLastBlockHash(hash string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastBlockHash = hash
+}
+
+// SetBlocksMined restores the block counter on startup.
+func (s *ProofOfIndexingService) SetBlocksMined(count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blocksMined = count
 }
 
 // OnMintClaimed registers a callback for successful on-chain mint events.
@@ -92,6 +133,33 @@ func (s *ProofOfIndexingService) Stop() {
 	log.Println("[mining] Stopped")
 }
 
+// Pause stops mining without shutting down. Heartbeats continue but won't trigger mining.
+func (s *ProofOfIndexingService) Pause() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.paused = true
+	log.Println("[mining] Paused")
+}
+
+// Resume re-enables mining after a pause.
+func (s *ProofOfIndexingService) Resume() {
+	s.mu.Lock()
+	s.paused = false
+	s.mu.Unlock()
+	log.Println("[mining] Resumed")
+	// Kick off mining if mempool has work
+	if s.mempool.Size() >= s.config.MinItems {
+		go s.mineLoop()
+	}
+}
+
+// IsPaused returns whether mining is paused.
+func (s *ProofOfIndexingService) IsPaused() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.paused
+}
+
 // SubmitWork adds a work item to the mempool and triggers mining if threshold met.
 func (s *ProofOfIndexingService) SubmitWork(id, workType string, data interface{}) {
 	log.Printf("[mining] Work submitted: %s %s", workType, id)
@@ -102,7 +170,11 @@ func (s *ProofOfIndexingService) SubmitWork(id, workType string, data interface{
 		Timestamp: time.Now().UnixMilli(),
 	})
 
-	if !s.isMining && s.mempool.Size() >= s.config.MinItems {
+	s.mu.Lock()
+	paused := s.paused
+	s.mu.Unlock()
+
+	if !paused && !s.isMining && s.mempool.Size() >= s.config.MinItems {
 		go s.mineLoop()
 	}
 }
@@ -118,15 +190,28 @@ func (s *ProofOfIndexingService) Status() map[string]interface{} {
 		hashRate = float64(s.totalHashes) / elapsed
 	}
 
-	return map[string]interface{}{
+	difficulty := s.config.Difficulty
+	if s.difficultyAdjuster != nil {
+		difficulty = s.difficultyAdjuster.Difficulty()
+	}
+
+	result := map[string]interface{}{
 		"blocks_mined":  s.blocksMined,
 		"hash_rate":     hashRate,
 		"mempool_size":  s.mempool.Size(),
 		"is_mining":     s.isMining,
 		"last_block":    s.lastBlockHash[:16],
 		"miner_address": s.config.MinerAddress,
-		"difficulty":    s.config.Difficulty,
+		"difficulty":    difficulty,
 	}
+
+	// Include network-level difficulty stats when adjuster is active
+	if s.difficultyAdjuster != nil {
+		daStats := s.difficultyAdjuster.Stats()
+		result["network"] = daStats
+	}
+
+	return result
 }
 
 func (s *ProofOfIndexingService) heartbeatLoop() {
@@ -182,13 +267,25 @@ func (s *ProofOfIndexingService) mineLoop() {
 			break
 		}
 
-		header := CreateBlockTemplate(items, s.lastBlockHash, s.config.MinerAddress, s.config.Difficulty)
-		log.Printf("[mining] Mining block with %d items. Difficulty: %d", len(items), s.config.Difficulty)
+		// Use dynamic difficulty from adjuster, or fall back to static config
+		difficulty := s.config.Difficulty
+		if s.difficultyAdjuster != nil {
+			difficulty = s.difficultyAdjuster.Difficulty()
+		}
+
+		header := CreateBlockTemplate(items, s.lastBlockHash, s.config.MinerAddress, difficulty)
+		log.Printf("[mining] Mining block with %d items. Difficulty: %d", len(items), difficulty)
 
 		// Mine in 1000-iteration bursts, up to 1000 chunks
 		var solution *PoWSolution
 		for chunk := 0; chunk < 1000; chunk++ {
-			solution = MineBlock(header, 1000)
+			// Use target-based mining when adjuster is active (fine-grained difficulty)
+			if s.difficultyAdjuster != nil {
+				target := s.difficultyAdjuster.Target()
+				solution = MineBlockWithTarget(header, target, 1000)
+			} else {
+				solution = MineBlock(header, 1000)
+			}
 			s.mu.Lock()
 			s.totalHashes += 1000
 			s.mu.Unlock()
@@ -214,6 +311,7 @@ func (s *ProofOfIndexingService) handleBlockFound(solution *PoWSolution, items [
 	s.mu.Lock()
 	s.lastBlockHash = solution.Hash
 	s.blocksMined++
+	height := s.blocksMined
 	s.mu.Unlock()
 
 	// Remove mined items from mempool
@@ -229,15 +327,30 @@ func (s *ProofOfIndexingService) handleBlockFound(solution *PoWSolution, items [
 		Hash:   solution.Hash,
 	}
 
+	// Record block in difficulty adjuster (own blocks count toward global rate)
+	if s.difficultyAdjuster != nil {
+		s.difficultyAdjuster.RecordBlock(time.Now())
+	}
+
+	// Persist block to database
+	if s.blockStorage != nil {
+		s.blockStorage(block, height, true)
+	}
+
+	// Announce block to the network via gossip
+	if s.blockAnnouncer != nil {
+		s.blockAnnouncer(block, height)
+	}
+
 	if s.onBlock != nil {
 		s.onBlock(BlockMinedEvent{Block: block, Timestamp: time.Now()})
 	}
 
 	// Claim mint on-chain (async)
-	go s.claimMint(block.Header.MerkleRoot)
+	go s.claimMint(block.Hash, block.Header.MerkleRoot)
 }
 
-func (s *ProofOfIndexingService) claimMint(merkleRoot string) {
+func (s *ProofOfIndexingService) claimMint(blockHash, merkleRoot string) {
 	result := ClaimMint(s.broadcaster, merkleRoot, s.claimConfig)
 	if result.Success && result.Txid != "" {
 		log.Printf("[mining] Mint claimed! txid=%s amount=%d merkle=%s",
@@ -247,6 +360,7 @@ func (s *ProofOfIndexingService) claimMint(merkleRoot string) {
 				Txid:       result.Txid,
 				Amount:     result.Amount,
 				MerkleRoot: merkleRoot,
+				BlockHash:  blockHash,
 			})
 		}
 	} else if !result.Success && result.Error != "" {

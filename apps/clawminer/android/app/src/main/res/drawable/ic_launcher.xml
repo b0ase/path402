@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Black circle background -->
+    <path
+        android:fillColor="#FF0A0A0A"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
+    <!-- Orange claw marks -->
+    <path
+        android:pathData="M36,28 Q39,46 33,78"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFF6600"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,24 Q54,48 51,80"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFF6600"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M72,28 Q69,46 75,78"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFF6600"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <!-- Claw tips -->
+    <path
+        android:pathData="M34,28 L38,28 L36,22Z"
+        android:fillColor="#FFFF6600" />
+    <path
+        android:pathData="M52,24 L56,24 L54,18Z"
+        android:fillColor="#FFFF6600" />
+    <path
+        android:pathData="M70,28 L74,28 L72,22Z"
+        android:fillColor="#FFFF6600" />
+</vector>

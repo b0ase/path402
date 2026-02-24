@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,25 @@ func (n *Node) Start() error {
 		opts = append(opts, libp2p.Identity(n.identityKey))
 	}
 
+	// On Android, net.InterfaceAddrs() fails (netlinkrib: permission denied)
+	// so libp2p only advertises 127.0.0.1. Use AddrsFactory to include
+	// the real LAN IP discovered via a UDP dial (which uses socket API, not netlink).
+	if localIP := resolveLocalIP(); localIP != "" {
+		lanAddr, err2 := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", localIP, n.port))
+		if err2 == nil {
+			opts = append(opts, libp2p.AddrsFactory(func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+				// Check if the LAN address is already present
+				for _, a := range addrs {
+					if a.Equal(lanAddr) {
+						return addrs
+					}
+				}
+				return append(addrs, lanAddr)
+			}))
+			log.Printf("[gossip] AddrsFactory: injecting LAN address %s", lanAddr)
+		}
+	}
+
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return fmt.Errorf("libp2p new: %w", err)
@@ -139,6 +159,12 @@ func (n *Node) Start() error {
 	mdnsService := mdns.NewMdnsService(h, "$402-gossip", &mdnsNotifee{node: n})
 	if err := mdnsService.Start(); err != nil {
 		log.Printf("[gossip] mDNS start failed (non-fatal): %v", err)
+	}
+
+	// Start explicit DHT rendezvous discovery (works even when mDNS fails, e.g. Android)
+	if n.enableDHT && n.dht != nil {
+		routingDisc := drouting.NewRoutingDiscovery(n.dht)
+		go n.dhtDiscoveryLoop(routingDisc)
 	}
 
 	log.Printf("[gossip] GossipSub ready on port %d", n.port)
@@ -292,11 +318,37 @@ func (n *Node) readLoop(topicName string, sub *pubsub.Subscription) {
 }
 
 // BootstrapDHT connects to the given multiaddr peers and adds them to the
-// DHT routing table. Call this after Start() with the configured bootstrap list.
+// DHT routing table. It also starts a background loop that reconnects every
+// 30 seconds if no peers are connected (critical for Android where mDNS is
+// unavailable and DHT bootstrap is the only discovery path).
 func (n *Node) BootstrapDHT(peers []string) {
 	if n.dht == nil || n.host == nil {
 		return
 	}
+
+	peerInfos := n.parseBootstrapPeers(peers)
+	n.connectToBootstrapPeers(peerInfos)
+
+	// Periodic reconnection loop
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-n.ctx.Done():
+				return
+			case <-ticker.C:
+				if len(n.host.Network().Peers()) == 0 {
+					log.Println("[gossip] No peers connected, reconnecting to bootstrap...")
+					n.connectToBootstrapPeers(peerInfos)
+				}
+			}
+		}
+	}()
+}
+
+func (n *Node) parseBootstrapPeers(peers []string) []peer.AddrInfo {
+	var infos []peer.AddrInfo
 	for _, addr := range peers {
 		ma, err := multiaddr.NewMultiaddr(addr)
 		if err != nil {
@@ -308,6 +360,13 @@ func (n *Node) BootstrapDHT(peers []string) {
 			log.Printf("[gossip] Bootstrap addr %q missing peer ID: %v", addr, err)
 			continue
 		}
+		infos = append(infos, *pi)
+	}
+	return infos
+}
+
+func (n *Node) connectToBootstrapPeers(peers []peer.AddrInfo) {
+	for _, pi := range peers {
 		go func(pi peer.AddrInfo) {
 			ctx, cancel := context.WithTimeout(n.ctx, 15*time.Second)
 			defer cancel()
@@ -316,7 +375,131 @@ func (n *Node) BootstrapDHT(peers []string) {
 				return
 			}
 			log.Printf("[gossip] Connected to bootstrap peer %s", pi.ID.String()[:16])
-		}(*pi)
+		}(pi)
+	}
+}
+
+const dhtRendezvous = "$402-gossip-v1"
+
+// dhtDiscoveryLoop advertises this node on the DHT rendezvous namespace,
+// searches for peers via rendezvous, and also crawls the DHT routing table
+// directly. This is the primary discovery mechanism on Android where mDNS
+// doesn't work. The routing table crawl finds peers even if they haven't
+// explicitly advertised on the rendezvous namespace.
+func (n *Node) dhtDiscoveryLoop(routingDisc *drouting.RoutingDiscovery) {
+	// Wait for bootstrap connection before starting discovery
+	time.Sleep(5 * time.Second)
+
+	// Advertise ourselves on rendezvous
+	_, err := routingDisc.Advertise(n.ctx, dhtRendezvous)
+	if err != nil {
+		log.Printf("[gossip] DHT advertise failed: %v", err)
+	} else {
+		log.Printf("[gossip] DHT: advertising on rendezvous %q", dhtRendezvous)
+	}
+
+	// Immediately try to discover peers via DHT routing table
+	n.crawlDHTRoutingTable()
+
+	// Periodic discovery loop
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		case <-ticker.C:
+			// Try rendezvous-based discovery
+			n.findRendezvousPeers(routingDisc)
+			// Also crawl the DHT routing table for any known peers
+			n.crawlDHTRoutingTable()
+			// Re-advertise (TTL expires)
+			routingDisc.Advertise(n.ctx, dhtRendezvous)
+		}
+	}
+}
+
+// findRendezvousPeers searches for peers that have advertised on the
+// $402-gossip-v1 rendezvous namespace.
+func (n *Node) findRendezvousPeers(routingDisc *drouting.RoutingDiscovery) {
+	ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second)
+	defer cancel()
+
+	peerCh, err := routingDisc.FindPeers(ctx, dhtRendezvous)
+	if err != nil {
+		return
+	}
+
+	for pi := range peerCh {
+		if pi.ID == n.host.ID() || pi.ID == "" {
+			continue
+		}
+		if n.host.Network().Connectedness(pi.ID) == 1 {
+			continue
+		}
+		connCtx, connCancel := context.WithTimeout(n.ctx, 10*time.Second)
+		if err := n.host.Connect(connCtx, pi); err != nil {
+			log.Printf("[gossip] DHT rendezvous peer %s connect failed: %v", pi.ID.String()[:16], err)
+		} else {
+			log.Printf("[gossip] DHT: connected to rendezvous peer %s", pi.ID.String()[:16])
+		}
+		connCancel()
+	}
+}
+
+// crawlDHTRoutingTable queries the DHT for peers close to our own ID,
+// which populates the routing table. Then it tries to connect to any
+// new peers found. This works even if peers haven't advertised on a
+// specific rendezvous namespace — any peer the bootstrap knows about
+// can be discovered this way.
+func (n *Node) crawlDHTRoutingTable() {
+	if n.dht == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(n.ctx, 15*time.Second)
+	defer cancel()
+
+	// Phase 1: GetClosestPeers queries the DHT network and populates the
+	// local routing table with peers near our ID in XOR keyspace.
+	n.dht.GetClosestPeers(ctx, string(n.host.ID()))
+
+	// Phase 2: Try connecting to ALL peers in the routing table. This
+	// includes peers discovered through GossipSub, mDNS on other nodes,
+	// and transitive DHT queries — not just the closest ones.
+	rtPeers := n.dht.RoutingTable().ListPeers()
+
+	connected := 0
+	for _, pid := range rtPeers {
+		if pid == n.host.ID() {
+			continue
+		}
+		if n.host.Network().Connectedness(pid) == 1 {
+			continue
+		}
+
+		addrs := n.host.Peerstore().Addrs(pid)
+		if len(addrs) == 0 {
+			continue
+		}
+
+		pi := peer.AddrInfo{ID: pid, Addrs: addrs}
+		connCtx, connCancel := context.WithTimeout(n.ctx, 10*time.Second)
+		if err := n.host.Connect(connCtx, pi); err != nil {
+			log.Printf("[gossip] DHT peer %s connect failed: %v", pid.String()[:16], err)
+		} else {
+			log.Printf("[gossip] DHT: connected to peer %s (%d addrs)", pid.String()[:16], len(addrs))
+			connected++
+		}
+		connCancel()
+	}
+
+	totalPeers := len(n.host.Network().Peers())
+	if connected > 0 {
+		log.Printf("[gossip] DHT crawl: %d in routing table, connected %d new, total %d peers",
+			len(rtPeers), connected, totalPeers)
+	} else {
+		log.Printf("[gossip] DHT crawl: %d in routing table, %d connected", len(rtPeers), totalPeers)
 	}
 }
 
@@ -324,6 +507,22 @@ func (n *Node) BootstrapDHT(peers []string) {
 
 type mdnsNotifee struct {
 	node *Node
+}
+
+// resolveLocalIP returns the LAN IP address by opening a UDP socket.
+// This works even on Android where net.InterfaceAddrs() fails, because
+// the socket API is allowed (only netlink is restricted).
+func resolveLocalIP() string {
+	conn, err := net.Dial("udp4", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr().(*net.UDPAddr)
+	if addr.IP.IsLoopback() || addr.IP.IsUnspecified() {
+		return ""
+	}
+	return addr.IP.String()
 }
 
 func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {

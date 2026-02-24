@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_black"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
+
+        <!-- ════════════════════════════════════════════
+             WALLET CARD
+             ════════════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/card_margin_horizontal"
+            android:background="@drawable/card_background"
+            android:orientation="vertical"
+            android:padding="@dimen/card_padding">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif"
+                android:text="@string/header_wallet"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_section_header"
+                android:textStyle="bold" />
+
+            <!-- Address label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif"
+                android:text="ADDRESS"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_label"
+                android:textStyle="bold" />
+
+            <!-- Address value -->
+            <TextView
+                android:id="@+id/wallet_address_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/orange_primary"
+                android:textSize="@dimen/text_body"
+                android:textIsSelectable="true" />
+
+            <!-- Public Key label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif"
+                android:text="PUBLIC KEY"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_label"
+                android:textStyle="bold" />
+
+            <!-- Public Key value -->
+            <TextView
+                android:id="@+id/wallet_pubkey_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/text_mono_small"
+                android:textIsSelectable="true" />
+
+            <!-- Auto-generated notice -->
+            <TextView
+                android:id="@+id/wallet_status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_mono_small" />
+        </LinearLayout>
+
+        <!-- ════════════════════════════════════════════
+             WALLET ACTIONS
+             ════════════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/card_margin_horizontal"
+            android:layout_marginTop="@dimen/card_margin_vertical"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btn_generate_wallet"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@drawable/button_outlined_orange"
+                android:fontFamily="sans-serif"
+                android:text="Generate New Wallet"
+                android:textColor="@color/orange_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btn_import_qr"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/button_outlined_orange"
+                android:fontFamily="sans-serif"
+                android:text="Import via QR"
+                android:textColor="@color/orange_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btn_export_wif"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/button_outlined_orange"
+                android:fontFamily="sans-serif"
+                android:text="Export WIF QR"
+                android:textColor="@color/orange_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

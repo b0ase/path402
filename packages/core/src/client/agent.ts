@@ -134,11 +134,18 @@ export interface AgentStatus {
     tokenId?: string;
     minerAddress?: string;
   };
+  relay: {
+    peer_count: number;
+    cache_size: number;
+    db_size: number;
+    uptime_ms: number;
+  };
 }
 
 // ── Autonomous Agent ───────────────────────────────────────────────
 
 import { ProofOfIndexingService } from '../services/mining.js';
+import { RelayService } from '../services/relay.js';
 import type { MintBroadcaster } from '../mining/broadcaster.js';
 
 export class Path402Agent extends EventEmitter {
@@ -148,6 +155,7 @@ export class Path402Agent extends EventEmitter {
   private intelligenceProvider: IntelligenceProvider | null = null;
   private guiServer: GUIServer | null = null;
   private miningService: ProofOfIndexingService | null = null;
+  private relayService: RelayService | null = null;
   private marketplaceBridge: MarketplaceBridge | null = null;
   private contentStore: FsContentStore | null = null;
   private config: AgentConfig;
@@ -224,10 +232,17 @@ export class Path402Agent extends EventEmitter {
 
     if (!minerAddr) minerAddr = '1minerAddressPLACEHOLDER';
 
+    // Initialize Relay Service (SPV Relay Mesh)
+    this.relayService = new RelayService();
+    this.relayService.attachToGossip(this.gossipNode!);
+    this.relayService.start();
+    console.log('[Agent] Relay Service initialized (SPV Relay Mesh)');
+
     this.miningService = new ProofOfIndexingService({
       minerAddress: minerAddr,
       gossipNode: this.gossipNode!,
       broadcaster,
+      relayService: this.relayService,
     });
     console.log(`[Agent] Mining Service initialized for ${minerAddr}${broadcaster ? ' (HTM broadcasting enabled)' : ''}`);
 
@@ -289,6 +304,11 @@ export class Path402Agent extends EventEmitter {
     if (this.guiServer) {
       this.guiServer.stop();
       this.guiServer = null;
+    }
+
+    if (this.relayService) {
+      this.relayService.stop();
+      this.relayService = null;
     }
 
     if (this.marketplaceBridge) {
@@ -593,7 +613,8 @@ export class Path402Agent extends EventEmitter {
         tokenId: this.config.tokenId || process.env.HTM_TOKEN_ID,
         minerAddress: process.env.MINER_ADDRESS || process.env.TREASURY_ADDRESS,
         ...(this.miningService ? this.miningService.status() : {}),
-      }
+      },
+      relay: this.relayService?.health() ?? { peer_count: 0, cache_size: 0, db_size: 0, uptime_ms: 0 },
     };
   }
 
@@ -1095,6 +1116,13 @@ export class Path402Agent extends EventEmitter {
    */
   getMarketplaceBridge(): MarketplaceBridge | null {
     return this.marketplaceBridge;
+  }
+
+  /**
+   * Get the relay service instance (SPV Relay Mesh)
+   */
+  getRelayService(): RelayService | null {
+    return this.relayService;
   }
 }
 

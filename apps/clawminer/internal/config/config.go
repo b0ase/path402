@@ -32,10 +32,12 @@ type MiningConfig struct {
 	MinItems          int           `yaml:"min_items"`
 	BatchSize         int           `yaml:"batch_size"`
 	TokenID           string        `yaml:"token_id"`
-	MintEndpoint      string        `yaml:"mint_endpoint"`  // HTTP mint service URL (fallback)
-	ArcURL            string        `yaml:"arc_url"`         // ARC broadcaster URL
-	ArcAPIKey         string        `yaml:"arc_api_key"`     // ARC API key (optional)
-	BroadcastMode     string        `yaml:"broadcast_mode"`  // "native", "http", or "none"
+	MintEndpoint      string        `yaml:"mint_endpoint"`   // HTTP mint service URL (fallback)
+	ArcURL            string        `yaml:"arc_url"`          // ARC broadcaster URL
+	ArcAPIKey         string        `yaml:"arc_api_key"`      // ARC API key (optional)
+	BroadcastMode     string        `yaml:"broadcast_mode"`   // "native", "http", or "none"
+	TargetBlockTime   time.Duration `yaml:"target_block_time"`  // Target time between network blocks (Bitcoin: 10m)
+	AdjustmentPeriod  int           `yaml:"adjustment_period"`  // Blocks between difficulty adjustments
 }
 
 type HeadersConfig struct {
@@ -89,6 +91,8 @@ func DefaultConfig() *Config {
 			TokenID:           "32ae25f861192f286bdbaf28f50b8ac1cd5ec4ff0b23a9831fa821acf91e5d02_0",
 			BroadcastMode:     "native",
 			ArcURL:            "https://arc.taal.com",
+			TargetBlockTime:   10 * time.Minute, // Same as Bitcoin — forces global competition
+			AdjustmentPeriod:  144,              // ~1 day at 10min blocks
 		},
 		Headers: HeadersConfig{
 			BHSURL:       "http://135.181.103.181:8090",

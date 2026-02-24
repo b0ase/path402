@@ -35,6 +35,10 @@ const (
 	MsgContentOffer    MessageType = "CONTENT_OFFER"
 	MsgTicketStamp     MessageType = "TICKET_STAMP"
 	MsgChatMessage     MessageType = "CHAT_MESSAGE"
+	MsgBlockAnnounce   MessageType = "BLOCK_ANNOUNCE"
+	MsgTxRelay         MessageType = "TX_RELAY"
+	MsgTxRequest       MessageType = "TX_REQUEST"
+	MsgTxResponse      MessageType = "TX_RESPONSE"
 	MsgPing            MessageType = "PING"
 	MsgPong            MessageType = "PONG"
 )
@@ -46,6 +50,8 @@ var validTypes = map[MessageType]bool{
 	MsgTransferEvent: true, MsgHolderUpdate: true,
 	MsgContentRequest: true, MsgContentOffer: true,
 	MsgTicketStamp: true, MsgChatMessage: true,
+	MsgBlockAnnounce: true,
+	MsgTxRelay: true, MsgTxRequest: true, MsgTxResponse: true,
 	MsgPing: true, MsgPong: true,
 }
 
@@ -137,6 +143,42 @@ type ChatPayload struct {
 	Timestamp     int64  `json:"timestamp"`
 }
 
+// BlockAnnouncePayload announces a mined block to the network.
+// Other miners use this to track the global block rate and adjust difficulty.
+// All fields needed to verify the PoW are included.
+type BlockAnnouncePayload struct {
+	Hash         string `json:"hash"`          // Block hash (double-SHA256)
+	Height       int    `json:"height"`        // Miner's local block height
+	MinerAddress string `json:"miner_address"` // Who mined it
+	Timestamp    int64  `json:"timestamp"`     // Block timestamp (unix ms)
+	Bits         int    `json:"bits"`          // Difficulty (leading hex zeros)
+	TargetHex    string `json:"target"`        // Full 256-bit target (hex)
+	MerkleRoot   string `json:"merkle_root"`   // Merkle root of work items
+	PrevHash     string `json:"prev_hash"`     // Previous block hash
+	Nonce        int    `json:"nonce"`         // Winning nonce
+	Version      int    `json:"version"`       // Block version
+	ItemCount    int    `json:"item_count"`    // Number of work items
+}
+
+// TX Relay Payloads (SPV Relay Mesh)
+
+type TxRelayPayload struct {
+	Txid   string `json:"txid"`
+	RawHex string `json:"raw_hex"`
+	Source string `json:"source"` // "local" or "peer"
+}
+
+type TxRequestPayload struct {
+	Txid string `json:"txid"`
+}
+
+type TxResponsePayload struct {
+	Txid      string `json:"txid"`
+	RawHex    string `json:"raw_hex"`
+	Confirmed bool   `json:"confirmed"`
+	BlockHash string `json:"block_hash,omitempty"`
+}
+
 type PingPayload struct {
 	Timestamp int64  `json:"timestamp"`
 	Nonce     string `json:"nonce"`
@@ -214,6 +256,33 @@ func NewTicketStamp(nodeID string, stamp *TicketStampPayload) (*GossipMessage, e
 
 func NewChatMessage(nodeID string, chat *ChatPayload) (*GossipMessage, error) {
 	return newMessage(MsgChatMessage, nodeID, chat, MessageTTL)
+}
+
+func NewBlockAnnounce(nodeID string, block *BlockAnnouncePayload) (*GossipMessage, error) {
+	return newMessage(MsgBlockAnnounce, nodeID, block, MessageTTL)
+}
+
+func NewTxRelay(nodeID, txid, rawHex, source string) (*GossipMessage, error) {
+	return newMessage(MsgTxRelay, nodeID, &TxRelayPayload{
+		Txid:   txid,
+		RawHex: rawHex,
+		Source: source,
+	}, MessageTTL)
+}
+
+func NewTxRequest(nodeID, txid string) (*GossipMessage, error) {
+	return newMessage(MsgTxRequest, nodeID, &TxRequestPayload{
+		Txid: txid,
+	}, MessageTTL)
+}
+
+func NewTxResponse(nodeID, txid, rawHex string, confirmed bool, blockHash string) (*GossipMessage, error) {
+	return newMessage(MsgTxResponse, nodeID, &TxResponsePayload{
+		Txid:      txid,
+		RawHex:    rawHex,
+		Confirmed: confirmed,
+		BlockHash: blockHash,
+	}, MessageTTL)
 }
 
 // Validation

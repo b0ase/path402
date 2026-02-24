@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/splash_background">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <!-- Animated claw icon -->
+        <ImageView
+            android:id="@+id/splash_icon"
+            android:layout_width="@dimen/splash_icon_size"
+            android:layout_height="@dimen/splash_icon_size"
+            android:src="@drawable/ic_claw_splash"
+            android:contentDescription="@string/app_name" />
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/splash_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:alpha="0"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.15"
+            android:text="@string/splash_title"
+            android:textColor="@color/orange_primary"
+            android:textSize="@dimen/splash_title_size"
+            android:textStyle="bold" />
+
+        <!-- Subtitle -->
+        <TextView
+            android:id="@+id/splash_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:alpha="0"
+            android:fontFamily="monospace"
+            android:text="@string/splash_subtitle"
+            android:textColor="@color/text_dim"
+            android:textSize="@dimen/splash_subtitle_size" />
+
+        <!-- Loading indicator -->
+        <ProgressBar
+            android:id="@+id/splash_progress"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginTop="48dp"
+            android:alpha="0"
+            android:indeterminateTint="@color/orange_primary" />
+
+    </LinearLayout>
+
+</FrameLayout>

@@ -287,6 +287,34 @@ CREATE TABLE IF NOT EXISTS identity_tokens (
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- ══════════════════════════════════════════════════════════════════
+-- POI_BLOCKS - Proof-of-Indexing block chain history
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS poi_blocks (
+  hash TEXT PRIMARY KEY,
+  height INTEGER NOT NULL,
+  prev_hash TEXT NOT NULL,
+  merkle_root TEXT NOT NULL,
+  miner_address TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  bits INTEGER NOT NULL,
+  nonce INTEGER NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  items_json TEXT,
+  is_own BOOLEAN NOT NULL DEFAULT 0,
+  mint_txid TEXT,
+  target_hex TEXT,
+  source_peer TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_poi_blocks_height ON poi_blocks(height);
+CREATE INDEX IF NOT EXISTS idx_poi_blocks_miner ON poi_blocks(miner_address);
+CREATE INDEX IF NOT EXISTS idx_poi_blocks_own ON poi_blocks(is_own) WHERE is_own = 1;
+CREATE INDEX IF NOT EXISTS idx_poi_blocks_time ON poi_blocks(timestamp);
+
 -- Default config
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('node_id', lower(hex(randomblob(16)))),

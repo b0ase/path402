@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="card_margin_horizontal">12dp</dimen>
+    <dimen name="card_margin_vertical">6dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_corner_radius">12dp</dimen>
+    <dimen name="card_border_width">1dp</dimen>
+    <dimen name="text_hero">42sp</dimen>
+    <dimen name="text_title">18sp</dimen>
+    <dimen name="text_section_header">13sp</dimen>
+    <dimen name="text_value">28sp</dimen>
+    <dimen name="text_value_small">20sp</dimen>
+    <dimen name="text_label">11sp</dimen>
+    <dimen name="text_body">13sp</dimen>
+    <dimen name="text_mono_small">11sp</dimen>
+    <dimen name="splash_icon_size">120dp</dimen>
+    <dimen name="splash_title_size">36sp</dimen>
+    <dimen name="splash_subtitle_size">14sp</dimen>
+    <dimen name="progress_bar_height">6dp</dimen>
+    <dimen name="progress_bar_height_large">10dp</dimen>
+    <dimen name="hero_icon_size">56dp</dimen>
+</resources>

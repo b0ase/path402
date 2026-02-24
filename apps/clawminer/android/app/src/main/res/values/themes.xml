@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base app theme — dark mining terminal -->
+    <style name="Theme.ClawMiner" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/orange_primary</item>
+        <item name="colorPrimaryDark">@color/orange_dark</item>
+        <item name="colorAccent">@color/orange_primary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:windowBackground">@color/bg_black</item>
+        <item name="android:statusBarColor">#FF0E0E0E</item>
+        <item name="android:navigationBarColor">@color/bottom_nav_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <!-- Dialog theme — dark background matching app -->
+    <style name="Theme.ClawMiner.Dialog" parent="Theme.AppCompat.Dialog">
+        <item name="colorPrimary">@color/orange_primary</item>
+        <item name="colorAccent">@color/orange_primary</item>
+        <item name="android:windowBackground">@color/bg_card</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+    </style>
+
+    <!-- Splash screen theme -->
+    <style name="Theme.ClawMiner.Splash">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@color/bg_black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

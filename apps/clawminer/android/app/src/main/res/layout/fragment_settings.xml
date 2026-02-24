@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_black"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
+
+        <!-- ════════════════════════════════════════════
+             SETTINGS CARD
+             ════════════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/card_margin_horizontal"
+            android:background="@drawable/card_background"
+            android:orientation="vertical"
+            android:padding="@dimen/card_padding">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif"
+                android:text="@string/header_settings"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_section_header"
+                android:textStyle="bold" />
+
+            <!-- Version label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:fontFamily="sans-serif"
+                android:text="@string/label_version"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_label"
+                android:textStyle="bold" />
+
+            <!-- Version value -->
+            <TextView
+                android:id="@+id/settings_version_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/orange_primary"
+                android:textSize="@dimen/text_body" />
+
+            <!-- Node ID label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:fontFamily="sans-serif"
+                android:text="@string/label_node_id"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_label"
+                android:textStyle="bold" />
+
+            <!-- Node ID value (full, selectable) -->
+            <TextView
+                android:id="@+id/settings_node_id_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/text_mono_small"
+                android:textIsSelectable="true" />
+        </LinearLayout>
+
+        <!-- Bottom branding -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:text="clawminer.store | b0x402.com\nBuilt by The Bitcoin Corporation"
+            android:textColor="#FF222222"
+            android:textSize="@dimen/text_label" />
+
+    </LinearLayout>
+
+</ScrollView>

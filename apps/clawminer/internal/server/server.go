@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/b0ase/path402/apps/clawminer/internal/relay"
 )
 
 // DaemonInfo provides read-only access to daemon state for the API.
@@ -14,22 +16,31 @@ type DaemonInfo interface {
 	NodeID() string
 	Uptime() time.Duration
 	PeerCount() int
+	GossipPeerID() string
 	MiningStatus() map[string]interface{}
+	WalletStatus() map[string]interface{}
 	HeaderSyncStatus() map[string]interface{}
 	ValidateMerkleRoot(root string, height int) (bool, error)
+	PauseMining()
+	ResumeMining()
+	IsMiningPaused() bool
 }
 
 // Server is the HTTP JSON API for the ClawMiner daemon.
 type Server struct {
-	httpSrv *http.Server
-	daemon  DaemonInfo
-	bind    string
-	port    int
+	httpSrv      *http.Server
+	daemon       DaemonInfo
+	relaySvc     *relay.Service
+	bind         string
+	port         int
 }
 
-// New creates an HTTP server.
-func New(bind string, port int, daemon DaemonInfo) *Server {
+// New creates an HTTP server. relaySvc may be nil if relay is not enabled.
+func New(bind string, port int, daemon DaemonInfo, relaySvc ...*relay.Service) *Server {
 	s := &Server{daemon: daemon, bind: bind, port: port}
+	if len(relaySvc) > 0 && relaySvc[0] != nil {
+		s.relaySvc = relaySvc[0]
+	}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
@@ -37,6 +48,15 @@ func New(bind string, port int, daemon DaemonInfo) *Server {
 		Handler: mux,
 	}
 	return s
+}
+
+// SetRelayService attaches the relay service and mounts its HTTP routes.
+func (s *Server) SetRelayService(svc *relay.Service) {
+	s.relaySvc = svc
+	// Routes already registered via registerRoutes if relaySvc is set,
+	// but we can also mount them onto the existing mux at construction time.
+	// Since Go 1.22 ServeMux is immutable after ListenAndServe, we register
+	// relay routes in registerRoutes() which checks s.relaySvc.
 }
 
 // Start pre-acquires the port and begins serving HTTP requests.

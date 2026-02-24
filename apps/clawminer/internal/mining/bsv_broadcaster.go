@@ -1,15 +1,18 @@
 package mining
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/broadcaster"
 	feemodel "github.com/bsv-blockchain/go-sdk/transaction/fee_model"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 )
@@ -163,33 +166,67 @@ func (b *BSVBroadcaster) BroadcastMint(merkleRoot string) (*MintBroadcasterResul
 	txid := tx.TxID().String()
 	log.Printf("[mining] Built PoI tx: %s (%d bytes)", txid, len(tx.Bytes()))
 
-	// Broadcast via ARC
-	arc := &broadcaster.Arc{
-		ApiUrl: b.arcURL,
-		ApiKey: b.arcAPIKey,
+	// Direct HTTP POST to ARC (bypasses go-sdk broadcaster which misparses responses)
+	rawHex := fmt.Sprintf("%x", tx.Bytes())
+	log.Printf("[mining] Broadcasting PoI tx to %s (%d bytes)", b.arcURL, len(tx.Bytes()))
+
+	arcReqBody := fmt.Sprintf(`{"rawTx":"%s"}`, rawHex)
+	arcURL := b.arcURL + "/v1/tx"
+	req, err := http.NewRequest("POST", arcURL, bytes.NewReader([]byte(arcReqBody)))
+	if err != nil {
+		return nil, fmt.Errorf("create ARC request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if b.arcAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+b.arcAPIKey)
 	}
 
-	success, failure := tx.Broadcast(arc)
-	if failure != nil {
-		errMsg := failure.Description
-		// Classify UTXO contention errors as retryable
-		if isUTXOContention(errMsg) {
-			return &MintBroadcasterResult{
-				Success: false,
-				Error:   errMsg,
-				Action:  "retry",
-			}, nil
-		}
+	resp, err := defaultHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ARC POST: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	var arcResp struct {
+		Status   int    `json:"status"`
+		Title    string `json:"title"`
+		TxStatus string `json:"txStatus"`
+		Txid     string `json:"txid"`
+	}
+	if err := json.Unmarshal(respBody, &arcResp); err != nil {
+		log.Printf("[mining] ARC response parse error: %v (body: %s)", err, string(respBody))
 		return &MintBroadcasterResult{
 			Success: false,
-			Error:   errMsg,
+			Error:   fmt.Sprintf("ARC parse error: %v", err),
 			Action:  "done",
 		}, nil
 	}
 
+	log.Printf("[mining] ARC response: status=%d txStatus=%q txid=%s",
+		arcResp.Status, arcResp.TxStatus, arcResp.Txid)
+
+	if arcResp.Status == 200 && arcResp.Txid != "" {
+		return &MintBroadcasterResult{
+			Success: true,
+			Txid:    arcResp.Txid,
+			Action:  "done",
+		}, nil
+	}
+
+	errMsg := arcResp.Title + ": " + arcResp.TxStatus
+	if isUTXOContention(errMsg) {
+		return &MintBroadcasterResult{
+			Success: false,
+			Error:   errMsg,
+			Action:  "retry",
+		}, nil
+	}
+
 	return &MintBroadcasterResult{
-		Success: true,
-		Txid:    success.Txid,
+		Success: false,
+		Error:   errMsg,
 		Action:  "done",
 	}, nil
 }
@@ -271,6 +308,34 @@ type wocTxOut struct {
 
 type wocTx struct {
 	Vout []wocTxOut `json:"vout"`
+}
+
+// GetBalance returns the total satoshi balance for an address by summing
+// unspent outputs. Unlike GetUTXOs, this skips fetching locking scripts,
+// making it much faster (single API call vs N+1).
+func (w *WocUTXOProvider) GetBalance(address string) (int64, error) {
+	url := fmt.Sprintf("https://api.whatsonchain.com/v1/bsv/%s/address/%s/unspent", w.Network, address)
+
+	resp, err := defaultHTTPClient.Get(url)
+	if err != nil {
+		return 0, fmt.Errorf("WOC balance request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("WOC balance status %d", resp.StatusCode)
+	}
+
+	var wocUtxos []wocUTXO
+	if err := decodeJSON(resp.Body, &wocUtxos); err != nil {
+		return 0, fmt.Errorf("decode WOC balance response: %w", err)
+	}
+
+	var total int64
+	for _, u := range wocUtxos {
+		total += int64(u.Value)
+	}
+	return total, nil
 }
 
 func (w *WocUTXOProvider) fetchLockingScript(txid string, vout uint32) (string, error) {

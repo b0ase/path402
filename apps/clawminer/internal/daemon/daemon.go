@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/config"
@@ -13,10 +14,15 @@ import (
 	"github.com/b0ase/path402/apps/clawminer/internal/gossip"
 	"github.com/b0ase/path402/apps/clawminer/internal/headers"
 	"github.com/b0ase/path402/apps/clawminer/internal/mining"
+	"github.com/b0ase/path402/apps/clawminer/internal/relay"
 	"github.com/b0ase/path402/apps/clawminer/internal/server"
 	"github.com/b0ase/path402/apps/clawminer/internal/wallet"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
+
+// lowBalanceThreshold is the satoshi level below which we warn.
+// 5000 sat (~$0.002) is enough for several mints.
+const lowBalanceThreshold int64 = 5000
 
 // Daemon orchestrates all ClawMiner subsystems.
 type Daemon struct {
@@ -26,9 +32,16 @@ type Daemon struct {
 	wallet     *wallet.Wallet
 	gossipNode *gossip.Node
 	miner      *mining.ProofOfIndexingService
+	relaySvc   *relay.Service
 	headerSync *headers.SyncService
 	httpSrv    *server.Server
 	stopCh     chan struct{}
+
+	// Balance tracking (written by balanceLoop, read by WalletStatus)
+	balanceMu       sync.RWMutex
+	balanceSatoshis int64
+	balanceFunded   bool
+	balanceChecked  bool // true once first check completes
 }
 
 // New creates a new daemon instance.
@@ -348,6 +361,18 @@ func (d *Daemon) Start() error {
 					log.Printf("[daemon] Failed to link mint txid to block: %v", err)
 				}
 			}
+			// Relay mint tx to peers via SPV Relay Mesh
+			if d.relaySvc != nil && event.Txid != "" {
+				d.relaySvc.StoreTx(event.Txid, event.MerkleRoot, false, "", "local")
+				// Publish to gossip relay topic
+				if d.gossipNode != nil {
+					msg, err := gossip.NewTxRelay(d.nodeID, event.Txid, event.MerkleRoot, "local")
+					if err == nil {
+						d.gossipNode.Publish(msg)
+						log.Printf("[relay] Relayed mint TX %s to network", event.Txid[:min(16, len(event.Txid))])
+					}
+				}
+			}
 		})
 
 		// Wire gossip → mining: validated gossip events become mining work
@@ -358,11 +383,37 @@ func (d *Daemon) Start() error {
 			minerAddr, d.cfg.Mining.Difficulty, targetBlockTime)
 	}
 
+	// 5.5 Start Relay Service (SPV Relay Mesh)
+	d.relaySvc = relay.New(func() int {
+		if d.gossipNode != nil {
+			return d.gossipNode.PeerCount()
+		}
+		return 0
+	})
+	d.relaySvc.Start()
+
+	// Wire gossip TX_RELAY → relay cache
+	handler.SetTxRelayObserver(func(senderID string, payload *gossip.TxRelayPayload) {
+		d.relaySvc.StoreTx(payload.Txid, payload.RawHex, false, "", senderID)
+	})
+
+	// Wire gossip TX_REQUEST → relay cache lookup
+	handler.SetTxRequestObserver(func(senderID string, payload *gossip.TxRequestPayload) {
+		if tx := d.relaySvc.GetTx(payload.Txid); tx != nil {
+			log.Printf("[relay] Serving TX %s to peer %s", payload.Txid[:min(16, len(payload.Txid))], senderID[:min(8, len(senderID))])
+		}
+	})
+
+	log.Println("[daemon] Relay Service started (SPV Relay Mesh)")
+
 	// 6. Start periodic status logging
 	go d.statusLoop()
 
+	// 6.5 Start balance monitoring (every 60s)
+	go d.balanceLoop()
+
 	// 7. Start HTTP API
-	d.httpSrv = server.New(d.cfg.API.Bind, d.cfg.API.Port, d)
+	d.httpSrv = server.New(d.cfg.API.Bind, d.cfg.API.Port, d, d.relaySvc)
 	if port, err := d.httpSrv.Start(); err != nil {
 		log.Printf("[daemon] WARNING: HTTP API failed to start: %v (mining continues)", err)
 	} else {
@@ -403,6 +454,47 @@ func (d *Daemon) statusLoop() {
 	}
 }
 
+// balanceLoop periodically checks the wallet balance via WhatsOnChain.
+func (d *Daemon) balanceLoop() {
+	if d.wallet == nil {
+		return
+	}
+
+	provider := mining.NewWocUTXOProvider()
+	address := d.wallet.Address
+
+	check := func() {
+		balance, err := provider.GetBalance(address)
+		if err != nil {
+			log.Printf("[wallet] Balance check failed: %v", err)
+			return
+		}
+
+		d.balanceMu.Lock()
+		d.balanceSatoshis = balance
+		d.balanceFunded = balance > 0
+		d.balanceChecked = true
+		isLow := balance < lowBalanceThreshold
+		d.balanceMu.Unlock()
+
+		if isLow {
+			log.Printf("[wallet] LOW BALANCE: %d sat remaining — fund %s to continue minting", balance, address)
+		}
+	}
+
+	check() // immediate first check
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.stopCh:
+			return
+		case <-ticker.C:
+			check()
+		}
+	}
+}
+
 // Stop shuts down all subsystems.
 func (d *Daemon) Stop() {
 	log.Println("[daemon] Shutting down...")
@@ -413,6 +505,9 @@ func (d *Daemon) Stop() {
 	}
 	if d.miner != nil {
 		d.miner.Stop()
+	}
+	if d.relaySvc != nil {
+		d.relaySvc.Stop()
 	}
 	if d.gossipNode != nil {
 		d.gossipNode.Stop()
@@ -451,6 +546,25 @@ func (d *Daemon) MiningStatus() map[string]interface{} {
 	return map[string]interface{}{"enabled": false}
 }
 
+func (d *Daemon) PauseMining() {
+	if d.miner != nil {
+		d.miner.Pause()
+	}
+}
+
+func (d *Daemon) ResumeMining() {
+	if d.miner != nil {
+		d.miner.Resume()
+	}
+}
+
+func (d *Daemon) IsMiningPaused() bool {
+	if d.miner != nil {
+		return d.miner.IsPaused()
+	}
+	return true
+}
+
 func (d *Daemon) HeaderSyncStatus() map[string]interface{} {
 	if d.headerSync == nil {
 		return map[string]interface{}{"enabled": false}
@@ -471,6 +585,14 @@ func (d *Daemon) WalletStatus() map[string]interface{} {
 	if d.wallet != nil {
 		result["address"] = d.wallet.Address
 		result["public_key"] = hex.EncodeToString(d.wallet.PublicKey)
+
+		d.balanceMu.RLock()
+		if d.balanceChecked {
+			result["balance_satoshis"] = d.balanceSatoshis
+			result["funded"] = d.balanceFunded
+			result["low_balance"] = d.balanceSatoshis < lowBalanceThreshold
+		}
+		d.balanceMu.RUnlock()
 	}
 	return result
 }

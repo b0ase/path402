@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ClawMiner</string>
+    <string name="splash_title">CLAWMINER</string>
+    <string name="splash_subtitle">$402 Proof-of-Indexing Miner</string>
+    <string name="header_mining">MINING</string>
+    <string name="header_sync">HEADER SYNC</string>
+    <string name="header_wallet">WALLET</string>
+    <string name="label_node">Node</string>
+    <string name="label_uptime">Uptime</string>
+    <string name="label_peers">Peers</string>
+    <string name="label_hash_rate">Hash Rate</string>
+    <string name="label_blocks_mined">Blocks</string>
+    <string name="label_mempool">Mempool</string>
+    <string name="label_headers">Headers</string>
+    <string name="label_syncing">Syncing&#8230;</string>
+    <string name="label_synced">Synced</string>
+    <string name="label_disabled">Disabled</string>
+    <string name="label_address">Address</string>
+    <string name="label_starting">Starting&#8230;</string>
+    <string name="label_h_per_s">H/s</string>
+    <string name="notification_title">ClawMiner</string>
+    <string name="notification_starting">Starting&#8230;</string>
+    <string name="notification_active">Mining active</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_mining">Mining</string>
+    <string name="nav_wallet">Wallet</string>
+    <string name="nav_settings">Settings</string>
+    <string name="header_settings">SETTINGS</string>
+    <string name="label_version">VERSION</string>
+    <string name="label_node_id">NODE ID</string>
+</resources>
