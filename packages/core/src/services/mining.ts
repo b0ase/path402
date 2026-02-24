@@ -23,6 +23,7 @@ import { mineBlock, mineBlockWithTarget, PoWSolution, BlockHeader } from '../min
 import { DifficultyAdjuster, difficultyFromTarget } from '../mining/difficulty.js';
 import { GossipNode } from '../gossip/node.js';
 import type { MintBroadcaster } from '../mining/broadcaster.js';
+import type { RelayService } from './relay.js';
 import {
     insertPoIBlock,
     updateBlockMintTxid,
@@ -48,6 +49,7 @@ export interface ProofOfIndexingOptions {
     privateKey?: string;
     gossipNode?: GossipNode;
     broadcaster?: MintBroadcaster;
+    relayService?: RelayService;
     /** Skip DB operations (for environments without SQLite) */
     noDb?: boolean;
 }
@@ -58,6 +60,7 @@ export class ProofOfIndexingService extends EventEmitter {
     private gossipNode: GossipNode | null = null;
     private minerAddress: string;
     private broadcaster: MintBroadcaster | null = null;
+    private relayService: RelayService | null = null;
     private lastBlockHash: string = '0000000000000000000000000000000000000000000000000000000000000000';
     private difficultyAdjuster: DifficultyAdjuster;
     private blocksMined: number = 0;
@@ -70,6 +73,7 @@ export class ProofOfIndexingService extends EventEmitter {
         this.minerAddress = options.minerAddress;
         this.gossipNode = options.gossipNode || null;
         this.broadcaster = options.broadcaster || null;
+        this.relayService = options.relayService || null;
         this.noDb = options.noDb || false;
 
         // Initialize difficulty adjuster
@@ -130,6 +134,10 @@ export class ProofOfIndexingService extends EventEmitter {
 
     setBroadcaster(broadcaster: MintBroadcaster) {
         this.broadcaster = broadcaster;
+    }
+
+    setRelayService(relay: RelayService) {
+        this.relayService = relay;
     }
 
     /** Get the difficulty adjuster for external use (e.g., feeding peer blocks) */
@@ -357,6 +365,10 @@ export class ProofOfIndexingService extends EventEmitter {
                 try {
                     updateBlockMintTxid(solution.hash, txid);
                 } catch (_) { /* ignore */ }
+            }
+            // 6b. Relay mint tx to peers via SPV Relay Mesh
+            if (txid && this.relayService) {
+                this.relayService.onMintBroadcast(txid, merkleRoot);
             }
         } else {
             console.log('[PoI] No broadcaster configured - skipping mint claim.');

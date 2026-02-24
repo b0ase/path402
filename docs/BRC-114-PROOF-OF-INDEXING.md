@@ -1,4 +1,4 @@
-# BRC-114: Proof-of-Indexing Hash-to-Mint Tokens
+# BRC-116: Proof-of-Indexing Hash-to-Mint Tokens
 
 Richard Boase (richard@b0ase.com)
 
@@ -29,7 +29,7 @@ The existing POW-20 protocol<sup>[2](#footnote-2)</sup> uses inscription-based m
 
 ### This Proposal
 
-BRC-114 solves these problems by:
+BRC-116 solves these problems by:
 
 1. **Moving PoW verification on-chain** via an sCrypt Hash-to-Mint smart contract ([BSV-21](https://docs.1satordinals.com/fungible-tokens/bsv-21))
 2. **Binding mining to indexing work** by including a work commitment in the hash preimage
@@ -42,7 +42,7 @@ The result is a self-sustaining overlay network where running a node is profitab
 
 ### 1. Token Standard
 
-BRC-114 tokens are BSV-21 fungible tokens<sup>[1](#footnote-1)</sup> deployed via the `deploy+mint` operation. The entire token supply is locked in a single sCrypt smart contract UTXO at genesis. Tokens enter circulation only when a miner successfully calls the contract's `mint` method with a valid Proof-of-Work solution.
+BRC-116 tokens are BSV-21 fungible tokens<sup>[1](#footnote-1)</sup> deployed via the `deploy+mint` operation. The entire token supply is locked in a single sCrypt smart contract UTXO at genesis. Tokens enter circulation only when a miner successfully calls the contract's `mint` method with a valid Proof-of-Work solution.
 
 The token is identified by its genesis outpoint (`<txid>_<vout>`), not by a ticker string. This eliminates ticker squatting and ensures globally unique identification.
 
@@ -163,7 +163,7 @@ The number of conditional branches determines the maximum number of halving eras
 
 #### 2.5 Contract Deployment
 
-A BRC-114 token is deployed as a single BSV-21 `deploy+mint` transaction. The contract constructor receives all immutable parameters. The `id` field is empty at deployment and auto-initialized to `<txid>_<vout>` on first mint via the BSV20V2 base class.
+A BRC-116 token is deployed as a single BSV-21 `deploy+mint` transaction. The contract constructor receives all immutable parameters. The `id` field is empty at deployment and auto-initialized to `<txid>_<vout>` on first mint via the BSV20V2 base class.
 
 The deployment transaction creates one output: the contract UTXO carrying the full token supply. This is the genesis of the token.
 
@@ -299,7 +299,7 @@ Receiving nodes MUST perform the following verification steps:
 
    **Note:** Plausibility verification is probabilistic. Nodes see different subsets of network activity. An honest miner should achieve ~60-90% plausibility across diverse verifiers, not necessarily 100%.
 
-   **Sybil resistance:** Because the gossip layer is unauthenticated (Section 4.1), reputation scores are **local to each node**, not globally consistent. A node MUST NOT assume that its ban list or reputation scores are shared by or authoritative for other nodes. Strong penalties (reputation set to 0, ban) SHOULD only be applied after corroboration from at least **3 independent verifiers** to reduce the impact of Sybil peers submitting false challenges or false verification results. Implementations MAY additionally require identity costs (e.g., a minimum on-chain history of successful mints, or a staking deposit per BRC-114 Open Question 5) to raise the cost of Sybil identities.
+   **Sybil resistance:** Because the gossip layer is unauthenticated (Section 4.1), reputation scores are **local to each node**, not globally consistent. A node MUST NOT assume that its ban list or reputation scores are shared by or authoritative for other nodes. Strong penalties (reputation set to 0, ban) SHOULD only be applied after corroboration from at least **3 independent verifiers** to reduce the impact of Sybil peers submitting false challenges or false verification results. Implementations MAY additionally require identity costs (e.g., a minimum on-chain history of successful mints, or a staking deposit per BRC-116 Open Question 5) to raise the cost of Sybil identities.
 
 4. **Reputation update.** Adjust the miner's reputation score:
    - Merkle match + plausibility >= 0.7: increase reputation
@@ -343,7 +343,7 @@ A node that fails to respond to a `WORK_CHALLENGE` within 30 seconds loses reput
 | Valid PoW + empty/trivial work | Tokens minted | Reduced reputation | Marginal: tokens minted but deprioritized by peers |
 | Invalid PoW | Transaction rejected by Transaction Processors | N/A | No tokens, wasted computation |
 
-**Terminology note:** In BSV, Transaction Processors (TPs) validate scripts and enforce consensus rules, rejecting invalid or double-spend attempts from the mempool. Miners package TP-validated transactions into blocks via Proof-of-Work. BRC-114's L1 security depends on both: TPs enforce the contract's spending conditions (PoW validity, supply checks, output integrity), and miners provide finality by including the valid transaction in a block.
+**Terminology note:** In BSV, Transaction Processors (TPs) validate scripts and enforce consensus rules, rejecting invalid or double-spend attempts from the mempool. Miners package TP-validated transactions into blocks via Proof-of-Work. BRC-116's L1 security depends on both: TPs enforce the contract's spending conditions (PoW validity, supply checks, output integrity), and miners provide finality by including the valid transaction in a block.
 
 The key economic insight: **$402 tokens are only valuable if you can trade them.** Trading happens on the L2 overlay network, where your reputation determines your access to trading partners. A miner who cheats on work commitments can mint tokens but has no market for them.
 
@@ -391,30 +391,30 @@ Otherwise:        difficulty unchanged
 
 ### 6. Content Token Integration
 
-BRC-114 is designed to incentivize overlay networks that index BSV-21 content tokens. Content tokens are separate BSV-21 tokens deployed by content issuers and are NOT part of this specification. However, this section describes the intended interaction pattern.
+BRC-116 is designed to incentivize overlay networks that index BSV-21 content tokens. Content tokens are separate BSV-21 tokens deployed by content issuers and are NOT part of this specification. However, this section describes the intended interaction pattern.
 
 #### 6.1 Token Separation
 
 | Concern | Token | Standard | Deployed By | Regulation |
 |---------|-------|----------|-------------|------------|
-| Overlay incentive | $402 (BRC-114) | BSV-21 HTM | Smart contract (no issuer) | Commodity-like (pure PoW) |
+| Overlay incentive | $402 (BRC-116) | BSV-21 HTM | Smart contract (no issuer) | Commodity-like (pure PoW) |
 | Content access | $EXAMPLE | BSV-21 (standard) | Content issuer | Issuer's responsibility |
 
-BRC-114 tokens are not required to access content. Users purchase content tokens directly with BSV. BRC-114 tokens incentivize the overlay infrastructure that makes content token economies possible.
+BRC-116 tokens are not required to access content. Users purchase content tokens directly with BSV. BRC-116 tokens incentivize the overlay infrastructure that makes content token economies possible.
 
 #### 6.2 Ticket Stamp Chains
 
-Content tokens function as tickets with cryptographic provenance (see BRC-104<sup>[3](#footnote-3)</sup> for the authentication substrate). When a node serves content in exchange for a ticket, it creates a stamp — a signed record of the serve event. These stamps form a chain of provenance that is both a quality signal and a source of `content_served` work items for BRC-114 mining.
+Content tokens function as tickets with cryptographic provenance (see BRC-104<sup>[3](#footnote-3)</sup> for the authentication substrate). When a node serves content in exchange for a ticket, it creates a stamp — a signed record of the serve event. These stamps form a chain of provenance that is both a quality signal and a source of `content_served` work items for BRC-116 mining.
 
 Where HTTP endpoints are monetized (e.g., paid content serving that generates `content_served` work items), implementations SHOULD use BRC-105<sup>[4](#footnote-4)</sup> to define the payment challenge/response flow. This ensures interoperability with other BSV services that implement the HTTP 402 monetization pattern.
 
 #### 6.3 Relationship to BRC-24 Lookup Services
 
-"Proof-of-Indexing" fundamentally incentivizes the provision of lookup capability as described in BRC-24<sup>[13](#footnote-13)</sup>. The `tx_indexed` and `market_indexed` work types correspond directly to BRC-24 query handling — a node that indexes token transfers and marketplace activity is providing the data layer that BRC-24 lookup services query. While BRC-114 overlay nodes are not required to expose a BRC-24 interface, the work they perform (indexing, serving, validating) is the same work that underpins BRC-24 lookup availability.
+"Proof-of-Indexing" fundamentally incentivizes the provision of lookup capability as described in BRC-24<sup>[13](#footnote-13)</sup>. The `tx_indexed` and `market_indexed` work types correspond directly to BRC-24 query handling — a node that indexes token transfers and marketplace activity is providing the data layer that BRC-24 lookup services query. While BRC-116 overlay nodes are not required to expose a BRC-24 interface, the work they perform (indexing, serving, validating) is the same work that underpins BRC-24 lookup availability.
 
 ### 7. Reference Parameters
 
-The following parameters are recommended for the initial deployment of a BRC-114 token:
+The following parameters are recommended for the initial deployment of a BRC-116 token:
 
 | Parameter | Recommended Value | Rationale |
 |-----------|-------------------|-----------|
@@ -428,7 +428,7 @@ These values are recommendations. Deployers MAY choose different parameters.
 
 ### 8. BRC-100 Wallet Separation
 
-A compliant BRC-114 mining implementation MUST allow the miner to use any BRC-100<sup>[11](#footnote-11)</sup> compliant wallet for key management, signing, encryption, and transaction submission. The mining client is an **application** that requests operations from a wallet, not a wallet itself.
+A compliant BRC-116 mining implementation MUST allow the miner to use any BRC-100<sup>[11](#footnote-11)</sup> compliant wallet for key management, signing, encryption, and transaction submission. The mining client is an **application** that requests operations from a wallet, not a wallet itself.
 
 Specifically, a conforming mining client MUST be able to:
 
@@ -437,7 +437,7 @@ Specifically, a conforming mining client MUST be able to:
 3. **Request the wallet to sign** any required inputs (funding inputs for transaction fees, change outputs).
 4. **Submit the signed transaction** for broadcast via the wallet's broadcast interface, or via any standard broadcast endpoint.
 
-A reference implementation MAY include an integrated wallet for testing and development purposes, but a production deployment MUST NOT require any specific wallet implementation. This ensures that BRC-114 mining remains vendor-neutral and interoperable with the broader BSV wallet ecosystem.
+A reference implementation MAY include an integrated wallet for testing and development purposes, but a production deployment MUST NOT require any specific wallet implementation. This ensures that BRC-116 mining remains vendor-neutral and interoperable with the broader BSV wallet ecosystem.
 
 ### 9. sCrypt Implementation Notes
 
@@ -448,7 +448,7 @@ A reference implementation MAY include an integrated wallet for testing and deve
 
 #### 9.2 Base Class
 
-BRC-114 contracts MUST extend `BSV20V2` from `scrypt-ord`. This base class provides:
+BRC-116 contracts MUST extend `BSV20V2` from `scrypt-ord`. This base class provides:
 
 - `buildStateOutputFT(amt)` — Builds the state continuation output with updated token amount
 - `BSV20V2.buildTransferOutput(addr, id, amt)` — Builds a P2PKH transfer output with BSV-20 inscription
@@ -479,7 +479,7 @@ The reference contract has been compiled using sCrypt compiler v1.20.0. Results:
 | Component | Script Size |
 |-----------|-------------|
 | BSV20V2 base class (Ordinal + Shift10 libraries) | 22.81 KB |
-| BRC-114 additions (PoW, halving, work commitment) | 1.10 KB |
+| BRC-116 additions (PoW, halving, work commitment) | 1.10 KB |
 | **Total compiled script** | **23.91 KB** |
 
 For comparison, a minimal `anyonecanmint` BSV20V2 contract (no PoW, no custom logic) compiles to 22.81 KB. The 23 KB base cost is inherent to the BSV-21 Ordinal inscription library and is shared by all deployed BSV-21 HTM tokens on mainnet.

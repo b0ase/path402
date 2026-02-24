@@ -369,3 +369,205 @@ export function useRestartAgent() {
     }
   });
 }
+
+// ── Chat History hooks ────────────────────────────────────────────
+
+export function useChatHistory(channel: string, limit = 50) {
+  return useQuery({
+    queryKey: ['chat-history', channel, limit],
+    queryFn: async () => {
+      if (typeof window !== 'undefined' && (window as any).path402?.getChatHistory) {
+        return (window as any).path402.getChatHistory(channel, limit);
+      }
+      return fetchAPI<any[]>(`/api/chat/history?channel=${encodeURIComponent(channel)}&limit=${limit}`);
+    },
+  });
+}
+
+// ── DM hooks ──────────────────────────────────────────────────────
+
+export function useDMConversations() {
+  return useQuery({
+    queryKey: ['dm-conversations'],
+    queryFn: async () => {
+      if (typeof window !== 'undefined' && (window as any).path402?.getDMConversations) {
+        return (window as any).path402.getDMConversations();
+      }
+      return fetchAPI<Array<{ peer_id: string; last_message: string; last_timestamp: number; unread_count: number }>>('/api/dm/conversations');
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+export function useDMMessages(peerId: string | null, limit = 50) {
+  return useQuery({
+    queryKey: ['dm-messages', peerId, limit],
+    queryFn: async () => {
+      if (!peerId) return [];
+      if (typeof window !== 'undefined' && (window as any).path402?.getDMMessages) {
+        return (window as any).path402.getDMMessages(peerId, limit);
+      }
+      return fetchAPI<any[]>(`/api/dm/${encodeURIComponent(peerId)}/messages?limit=${limit}`);
+    },
+    enabled: !!peerId,
+  });
+}
+
+export function useSendDM() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ peerId, content }: { peerId: string; content: string }) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.sendDM) {
+        return (window as any).path402.sendDM(peerId, content);
+      }
+      const res = await fetch(`${API_BASE}/api/dm/${encodeURIComponent(peerId)}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      if (!res.ok) throw new Error('Failed to send DM');
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['dm-messages', variables.peerId] });
+      queryClient.invalidateQueries({ queryKey: ['dm-conversations'] });
+    }
+  });
+}
+
+// ── Room hooks ────────────────────────────────────────────────────
+
+export interface Room {
+  room_id: string;
+  name: string;
+  room_type: 'text' | 'voice' | 'hybrid';
+  access_type: 'public' | 'private' | 'token_gated';
+  token_id: string | null;
+  creator_peer_id: string;
+  capacity: number;
+  description: string | null;
+  created_at: number;
+  members?: Array<{ peer_id: string; role: string; active: number }>;
+}
+
+export function useRooms() {
+  return useQuery({
+    queryKey: ['rooms'],
+    queryFn: async () => {
+      if (typeof window !== 'undefined' && (window as any).path402?.getRooms) {
+        return (window as any).path402.getRooms();
+      }
+      return fetchAPI<Room[]>('/api/rooms');
+    },
+    refetchInterval: 15_000,
+  });
+}
+
+export function useRoom(roomId: string | null) {
+  return useQuery({
+    queryKey: ['room', roomId],
+    queryFn: async () => {
+      if (!roomId) return null;
+      if (typeof window !== 'undefined' && (window as any).path402?.getRoom) {
+        return (window as any).path402.getRoom(roomId);
+      }
+      return fetchAPI<Room>(`/api/rooms/${encodeURIComponent(roomId)}`);
+    },
+    enabled: !!roomId,
+  });
+}
+
+export function useRoomMessages(roomId: string | null, limit = 50) {
+  return useQuery({
+    queryKey: ['room-messages', roomId, limit],
+    queryFn: async () => {
+      if (!roomId) return [];
+      if (typeof window !== 'undefined' && (window as any).path402?.getRoomMessages) {
+        return (window as any).path402.getRoomMessages(roomId, limit);
+      }
+      return fetchAPI<any[]>(`/api/rooms/${encodeURIComponent(roomId)}/messages?limit=${limit}`);
+    },
+    enabled: !!roomId,
+  });
+}
+
+export function useCreateRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ name, roomType, accessType, tokenSymbol }: {
+      name: string;
+      roomType?: string;
+      accessType?: string;
+      tokenSymbol?: string;
+    }) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.createRoom) {
+        return (window as any).path402.createRoom(name, roomType, accessType, tokenSymbol);
+      }
+      const res = await fetch(`${API_BASE}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, roomType, accessType, tokenSymbol })
+      });
+      if (!res.ok) throw new Error('Failed to create room');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    }
+  });
+}
+
+export function useJoinRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (roomId: string) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.joinRoom) {
+        return (window as any).path402.joinRoom(roomId);
+      }
+      const res = await fetch(`${API_BASE}/api/rooms/${encodeURIComponent(roomId)}/join`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to join room');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    }
+  });
+}
+
+export function useLeaveRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (roomId: string) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.leaveRoom) {
+        return (window as any).path402.leaveRoom(roomId);
+      }
+      const res = await fetch(`${API_BASE}/api/rooms/${encodeURIComponent(roomId)}/leave`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to leave room');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    }
+  });
+}
+
+export function useSendRoomMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ roomId, content }: { roomId: string; content: string }) => {
+      if (typeof window !== 'undefined' && (window as any).path402?.sendRoomMessage) {
+        return (window as any).path402.sendRoomMessage(roomId, content);
+      }
+      const res = await fetch(`${API_BASE}/api/rooms/${encodeURIComponent(roomId)}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      if (!res.ok) throw new Error('Failed to send room message');
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['room-messages', variables.roomId] });
+    }
+  });
+}

@@ -42,6 +42,12 @@ import {
   createChatMessage,
   BlockAnnouncePayload,
   createBlockAnnounce,
+  TxRelayPayload,
+  TxRequestPayload,
+  TxResponsePayload,
+  createTxRelay,
+  createTxRequest,
+  createTxResponse,
   GOSSIP_PORT,
   CallSignalMessage,
   DMSignalMessage,
@@ -79,7 +85,8 @@ const TOPICS = {
   CHAT: '$402/chat/v1',
   CONTENT: '$402/content/v1',
   ROOMS: '$402/rooms/v1',
-  BLOCKS: '$402/blocks/v1'
+  BLOCKS: '$402/blocks/v1',
+  RELAY: '$402/relay/v1'
 };
 
 const CALL_PROTOCOL = '/path402/call/1.0.0';
@@ -207,6 +214,7 @@ export class GossipNode extends EventEmitter {
       await lp2p.services.pubsub.subscribe(TOPICS.CONTENT);
       await lp2p.services.pubsub.subscribe(TOPICS.ROOMS);
       await lp2p.services.pubsub.subscribe(TOPICS.BLOCKS);
+      await lp2p.services.pubsub.subscribe(TOPICS.RELAY);
     }
 
     this.started = true;
@@ -320,6 +328,14 @@ export class GossipNode extends EventEmitter {
       case MessageType.BLOCK_ANNOUNCE:
         this.handleBlockAnnounce(msg.sender_id, msg as GossipMessage<BlockAnnouncePayload>);
         break;
+
+      case MessageType.TX_RELAY:
+        this.handleTxRelay(msg.sender_id, msg as GossipMessage<TxRelayPayload>);
+        break;
+
+      case MessageType.TX_REQUEST:
+        this.handleTxRequest(msg.sender_id, msg as GossipMessage<TxRequestPayload>);
+        break;
     }
   }
 
@@ -415,6 +431,28 @@ export class GossipNode extends EventEmitter {
     const block = msg.payload;
     console.log(`[GossipNode] Block announced: height=${block.height} hash=${block.hash.slice(0, 16)}... from ${peerId.slice(0, 8)}...`);
     this.emit('block:announced', block, peerId);
+  }
+
+  // ── TX Relay Handlers ────────────────────────────────────────
+
+  private handleTxRelay(peerId: string, msg: GossipMessage<TxRelayPayload>): void {
+    const { txid, raw_hex, source } = msg.payload;
+    console.log(`[GossipNode] TX_RELAY: ${txid.slice(0, 16)}... from ${peerId.slice(0, 8)}... (source: ${source})`);
+    this.emit('tx:relayed', txid, raw_hex, peerId);
+  }
+
+  private handleTxRequest(peerId: string, msg: GossipMessage<TxRequestPayload>): void {
+    const { txid } = msg.payload;
+    console.log(`[GossipNode] TX_REQUEST: ${txid.slice(0, 16)}... from ${peerId.slice(0, 8)}...`);
+    this.emit('tx:requested', txid, peerId);
+  }
+
+  // ── TX Relay Public API ────────────────────────────────────────
+
+  relayTransaction(txid: string, rawHex: string): void {
+    const msg = createTxRelay(this.nodeId, txid, rawHex, 'local');
+    this.publish(TOPICS.RELAY, msg);
+    console.log(`[GossipNode] Relayed TX ${txid.slice(0, 16)}... via GossipSub`);
   }
 
   // ── DM Signaling (Direct Streams) ────────────────────────────

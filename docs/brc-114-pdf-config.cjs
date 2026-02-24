@@ -18,7 +18,7 @@ module.exports = {
     displayHeaderFooter: true,
     headerTemplate: `
       <div style="font-family: 'Inter', sans-serif; font-size: 8px; color: #888; margin-left: 20mm; width: 100%;">
-        <span style="float: left;">BRC-114: Proof-of-Indexing Hash-to-Mint Tokens</span>
+        <span style="float: left;">BRC-116: Proof-of-Indexing Hash-to-Mint Tokens</span>
         <span style="float: right; margin-right: 20mm;">DRAFT — February 2026</span>
       </div>
     `,

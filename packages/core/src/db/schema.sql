@@ -472,6 +472,23 @@ CREATE INDEX IF NOT EXISTS idx_poi_blocks_miner ON poi_blocks(miner_address);
 CREATE INDEX IF NOT EXISTS idx_poi_blocks_own ON poi_blocks(is_own) WHERE is_own = 1;
 CREATE INDEX IF NOT EXISTS idx_poi_blocks_time ON poi_blocks(timestamp);
 
+-- ══════════════════════════════════════════════════════════════════
+-- RELAY_TXS - Transaction relay cache (SPV Relay Mesh)
+-- Stores recently seen transactions for mesh fallback serving
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS relay_txs (
+  txid TEXT PRIMARY KEY,
+  raw_hex TEXT NOT NULL,
+  confirmed INTEGER NOT NULL DEFAULT 0,
+  block_hash TEXT,
+  source_peer TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_relay_txs_created ON relay_txs(created_at);
+CREATE INDEX IF NOT EXISTS idx_relay_txs_confirmed ON relay_txs(confirmed);
+
 -- Default config
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('node_id', lower(hex(randomblob(16)))),

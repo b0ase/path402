@@ -1024,6 +1024,59 @@ export function getRoomMembers(roomId: string, activeOnly = true): RoomMember[] 
   return getDb().prepare('SELECT * FROM room_members WHERE room_id = ?').all(roomId) as RoomMember[];
 }
 
+// ── Relay TX Cache (SPV Relay Mesh) ──────────────────────────────
+
+export interface RelayTx {
+  txid: string;
+  raw_hex: string;
+  confirmed: number;
+  block_hash: string | null;
+  source_peer: string | null;
+  created_at: number;
+}
+
+export function upsertRelayTx(tx: {
+  txid: string;
+  raw_hex: string;
+  confirmed?: boolean;
+  block_hash?: string;
+  source_peer?: string;
+}): void {
+  getDb().prepare(`
+    INSERT INTO relay_txs (txid, raw_hex, confirmed, block_hash, source_peer)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(txid) DO UPDATE SET
+      confirmed = CASE WHEN excluded.confirmed = 1 THEN 1 ELSE relay_txs.confirmed END,
+      block_hash = COALESCE(excluded.block_hash, relay_txs.block_hash)
+  `).run(
+    tx.txid,
+    tx.raw_hex,
+    tx.confirmed ? 1 : 0,
+    tx.block_hash ?? null,
+    tx.source_peer ?? null
+  );
+}
+
+export function getRelayTx(txid: string): RelayTx | null {
+  return getDb().prepare('SELECT * FROM relay_txs WHERE txid = ?').get(txid) as RelayTx | null;
+}
+
+export function hasRelayTx(txid: string): boolean {
+  const row = getDb().prepare('SELECT 1 FROM relay_txs WHERE txid = ?').get(txid);
+  return !!row;
+}
+
+export function getRelayTxCount(): number {
+  const row = getDb().prepare('SELECT COUNT(*) as count FROM relay_txs').get() as { count: number };
+  return row.count;
+}
+
+export function pruneRelayTxs(maxAgeSeconds: number): number {
+  const cutoff = Math.floor(Date.now() / 1000) - maxAgeSeconds;
+  const result = getDb().prepare('DELETE FROM relay_txs WHERE created_at < ?').run(cutoff);
+  return result.changes;
+}
+
 // ── Speculation Opportunities ──────────────────────────────────────
 
 export function getSpeculationOpportunities(): Array<{
