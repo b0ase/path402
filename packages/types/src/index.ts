@@ -376,3 +376,8 @@ export interface RegisterHoldingRequest {
   document_type: string;
   document_ref?: string;
 }
+
+// ─── $401 Identity Strength ─────────────────────────────────────────────────
+
+export { calculateStrength, STRAND_POINTS } from './strand-strength';
+export type { StrengthLevel, StrengthScore } from './strand-strength';

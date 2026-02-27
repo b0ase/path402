@@ -18,7 +18,99 @@ import { CashboardSSE } from '../cashboard/sse.js';
 import { CashboardExecutor } from '../cashboard/executor.js';
 import { CashboardRunner } from '../cashboard/runner.js';
 import { NODE_ACTION_MAP, AVAILABLE_ACTIONS } from '../cashboard/types.js';
-import type { ExecuteStepRequest, CashboardWorkflow } from '../cashboard/types.js';
+import type { ExecuteStepRequest, CashboardWorkflow, CashboardNode, CashboardConnection } from '../cashboard/types.js';
+
+// ── Workflow Templates ────────────────────────────────────────────────
+const WORKFLOW_TEMPLATES: Array<{
+  id: string;
+  name: string;
+  description: string;
+  nodes: CashboardNode[];
+  connections: CashboardConnection[];
+}> = [
+  {
+    id: 'tpl-system-health',
+    name: 'System Health Check',
+    description: 'Fan-out: agent status + mining + relay + peers in parallel',
+    nodes: [
+      { id: 'n1', type: 'trigger', name: 'Start' },
+      { id: 'n2', type: 'trigger', name: 'Agent Status', metadata: { action: 'get_status' } },
+      { id: 'n3', type: 'mint', name: 'Mining Status' },
+      { id: 'n4', type: 'queue', name: 'Relay Health' },
+      { id: 'n5', type: 'gateway', name: 'Network Peers' },
+    ],
+    connections: [
+      { id: 'c1', source: 'n1', target: 'n2' },
+      { id: 'c2', source: 'n1', target: 'n3' },
+      { id: 'c3', source: 'n1', target: 'n4' },
+      { id: 'c4', source: 'n1', target: 'n5' },
+    ],
+  },
+  {
+    id: 'tpl-token-discovery',
+    name: 'Token Discovery Pipeline',
+    description: 'Discover → evaluate budget → price analysis → holder data → economics',
+    nodes: [
+      { id: 'n1', type: 'instrument', name: 'Discover Token' },
+      { id: 'n2', type: 'condition', name: 'Evaluate Budget' },
+      { id: 'n3', type: 'calculator', name: 'Price Analysis' },
+      { id: 'n4', type: 'filter', name: 'Holder Data' },
+      { id: 'n5', type: 'function', name: 'Economics' },
+    ],
+    connections: [
+      { id: 'c1', source: 'n1', target: 'n2', conditionType: 'success' },
+      { id: 'c2', source: 'n2', target: 'n3', conditionType: 'success' },
+      { id: 'c3', source: 'n3', target: 'n4', conditionType: 'success' },
+      { id: 'c4', source: 'n4', target: 'n5', conditionType: 'success' },
+    ],
+  },
+  {
+    id: 'tpl-x402-agent-chain',
+    name: 'x402 Agent Chain',
+    description: 'Discover agents → check wallet → execute chain → wallet identity',
+    nodes: [
+      { id: 'n1', type: 'replicate', name: 'Discover Agents' },
+      { id: 'n2', type: 'wallets', name: 'Check Wallet' },
+      { id: 'n3', type: 'ai-agent', name: 'Execute Chain' },
+      { id: 'n4', type: 'contact', name: 'Wallet Identity' },
+    ],
+    connections: [
+      { id: 'c1', source: 'n1', target: 'n2', conditionType: 'success' },
+      { id: 'c2', source: 'n2', target: 'n3', conditionType: 'success' },
+      { id: 'c3', source: 'n3', target: 'n4', conditionType: 'success' },
+    ],
+  },
+  {
+    id: 'tpl-domain-verification',
+    name: 'Domain Verification',
+    description: 'DNS verify → token stats → marketplace data',
+    nodes: [
+      { id: 'n1', type: 'validator', name: 'DNS Verify' },
+      { id: 'n2', type: 'database', name: 'Token Stats' },
+      { id: 'n3', type: 'salesforce', name: 'Marketplace Data' },
+    ],
+    connections: [
+      { id: 'c1', source: 'n1', target: 'n2', conditionType: 'success' },
+      { id: 'c2', source: 'n2', target: 'n3', conditionType: 'success' },
+    ],
+  },
+  {
+    id: 'tpl-marketplace-sync',
+    name: 'Marketplace Sync',
+    description: 'Marketplace data → batch discover → price analysis → top holders',
+    nodes: [
+      { id: 'n1', type: 'stripe', name: 'Marketplace Data' },
+      { id: 'n2', type: 'webhook', name: 'Batch Discover' },
+      { id: 'n3', type: 'finance', name: 'Price Analysis' },
+      { id: 'n4', type: 'sorter', name: 'Top Holders' },
+    ],
+    connections: [
+      { id: 'c1', source: 'n1', target: 'n2', conditionType: 'success' },
+      { id: 'c2', source: 'n2', target: 'n3', conditionType: 'success' },
+      { id: 'c3', source: 'n3', target: 'n4', conditionType: 'success' },
+    ],
+  },
+];
 import {
   getAllTokens,
   getPortfolio,
@@ -33,6 +125,14 @@ import {
   getCashboardRun,
   getCashboardStepsByRun,
   getAllCashboardRuns,
+  getRecentPoIBlocks,
+  getLatestPoIBlock,
+  getPoIBlockCount,
+  getOwnBlockCount,
+  getPoIBlockByHash,
+  getHighestHeaderHeight,
+  getBlockHeaderCount,
+  hasMerkleRoot,
 } from '../db/index.js';
 
 // BRC-105 imports — used conditionally when walletKey is present
@@ -198,6 +298,142 @@ export class GUIServer {
 
     app.get('/api/content/stats', (_req: Request, res: Response) => {
       res.json(getContentCacheStats());
+    });
+
+    // ── Mining Control Routes ─────────────────────────────────────
+
+    app.get('/api/mining/status', (_req: Request, res: Response) => {
+      const mining = this.agent.getMiningService();
+      if (!mining) {
+        res.json({ enabled: false });
+        return;
+      }
+      res.json({ enabled: true, ...mining.status() });
+    });
+
+    app.post('/api/mining/start', (_req: Request, res: Response) => {
+      const mining = this.agent.getMiningService();
+      if (!mining) {
+        res.status(400).json({ error: 'Mining not initialized' });
+        return;
+      }
+      mining.resume();
+      res.json({ success: true, paused: false });
+    });
+
+    app.post('/api/mining/stop', (_req: Request, res: Response) => {
+      const mining = this.agent.getMiningService();
+      if (!mining) {
+        res.status(400).json({ error: 'Mining not initialized' });
+        return;
+      }
+      mining.pause();
+      res.json({ success: true, paused: true });
+    });
+
+    // ── Block Query Routes ─────────────────────────────────────────
+
+    app.get('/api/blocks', (req: Request, res: Response) => {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      res.json(getRecentPoIBlocks(limit, offset));
+    });
+
+    app.get('/api/blocks/latest', (_req: Request, res: Response) => {
+      const block = getLatestPoIBlock();
+      if (!block) {
+        res.status(404).json({ error: 'No blocks mined yet' });
+        return;
+      }
+      res.json(block);
+    });
+
+    app.get('/api/blocks/count', (_req: Request, res: Response) => {
+      res.json({ total: getPoIBlockCount(), own: getOwnBlockCount() });
+    });
+
+    app.get('/api/blocks/:hash', (req: Request, res: Response) => {
+      const block = getPoIBlockByHash(req.params.hash as string);
+      if (!block) {
+        res.status(404).json({ error: 'Block not found' });
+        return;
+      }
+      res.json(block);
+    });
+
+    // ── Header Sync Routes ──────────────────────────────────────────
+
+    app.get('/api/headers/status', (_req: Request, res: Response) => {
+      const headerSync = this.agent.getHeaderSyncService();
+      if (!headerSync) {
+        res.json({ enabled: false });
+        return;
+      }
+      res.json({ enabled: true, ...headerSync.getProgress() });
+    });
+
+    app.get('/api/headers/tip', (_req: Request, res: Response) => {
+      res.json({
+        height: getHighestHeaderHeight(),
+        count: getBlockHeaderCount(),
+      });
+    });
+
+    app.get('/api/headers/verify', async (req: Request, res: Response) => {
+      const root = req.query.root as string;
+      const height = parseInt(req.query.height as string);
+      if (!root || isNaN(height)) {
+        res.status(400).json({ error: 'root and height query params required' });
+        return;
+      }
+      const headerSync = this.agent.getHeaderSyncService();
+      if (!headerSync) {
+        // Fall back to local DB only
+        res.json({ valid: hasMerkleRoot(root, height), source: 'local' });
+        return;
+      }
+      const valid = await headerSync.validateMerkleRoot(root, height);
+      res.json({ valid, root, height });
+    });
+
+    // ── Content Announce Route ─────────────────────────────────────
+
+    app.post('/api/content/:hash/announce', (req: Request, res: Response) => {
+      const hash = req.params.hash as string;
+      const { price_sats, server_address } = req.body || {};
+
+      const content = getContentByHash(hash);
+      if (!content) {
+        res.status(404).json({ error: 'Content not found' });
+        return;
+      }
+
+      const gossipNode = this.agent.getGossipNode();
+      if (!gossipNode) {
+        res.status(503).json({ error: 'Gossip network not connected' });
+        return;
+      }
+
+      gossipNode.offerContent(
+        content.token_id,
+        hash,
+        content.content_size || 0,
+        price_sats || content.price_paid_sats || 100,
+        server_address || `http://localhost:${this.port}`
+      );
+
+      res.json({ success: true, announced: hash });
+    });
+
+    // ── Wallet Balance Route ──────────────────────────────────────
+
+    app.get('/api/wallet/balance', (_req: Request, res: Response) => {
+      const walletService = this.agent.getWalletBalanceService();
+      if (!walletService) {
+        res.json({ address: '', balance_satoshis: 0, funded: false, low_balance: false, last_checked: 0 });
+        return;
+      }
+      res.json(walletService.getStatus());
     });
 
     app.get('/api/config', (_req: Request, res: Response) => {
@@ -381,6 +617,11 @@ export class GUIServer {
         nodeActionMap: NODE_ACTION_MAP,
         availableActions: AVAILABLE_ACTIONS,
       });
+    });
+
+    // Pre-built workflow templates
+    app.get('/api/cashboard/templates', (_req: Request, res: Response) => {
+      res.json({ templates: WORKFLOW_TEMPLATES });
     });
 
     // ── Cashboard Workflow Runner Routes ───────────────────────────
