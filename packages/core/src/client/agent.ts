@@ -97,6 +97,10 @@ export interface AgentConfig {
 
   // Marketplace
   marketplaceUrl?: string;
+
+  // Block Header Sync (BHS)
+  bhsUrl?: string;
+  bhsApiKey?: string;
 }
 
 export interface AgentStatus {
@@ -146,6 +150,8 @@ export interface AgentStatus {
 
 import { ProofOfIndexingService } from '../services/mining.js';
 import { RelayService } from '../services/relay.js';
+import { HeaderSyncService } from '../services/headers.js';
+import { WalletBalanceService } from '../services/wallet-balance.js';
 import type { MintBroadcaster } from '../mining/broadcaster.js';
 
 export class Path402Agent extends EventEmitter {
@@ -156,6 +162,8 @@ export class Path402Agent extends EventEmitter {
   private guiServer: GUIServer | null = null;
   private miningService: ProofOfIndexingService | null = null;
   private relayService: RelayService | null = null;
+  private headerSyncService: HeaderSyncService | null = null;
+  private walletBalanceService: WalletBalanceService | null = null;
   private marketplaceBridge: MarketplaceBridge | null = null;
   private contentStore: FsContentStore | null = null;
   private config: AgentConfig;
@@ -246,6 +254,26 @@ export class Path402Agent extends EventEmitter {
     });
     console.log(`[Agent] Mining Service initialized for ${minerAddr}${broadcaster ? ' (HTM broadcasting enabled)' : ''}`);
 
+    // Initialize Block Header Sync (SPV validation)
+    const bhsUrl = this.config.bhsUrl || process.env.CLAWMINER_BHS_URL || '';
+    if (bhsUrl) {
+      this.headerSyncService = new HeaderSyncService({
+        bhsUrl,
+        bhsApiKey: this.config.bhsApiKey || process.env.CLAWMINER_BHS_API_KEY,
+      });
+      await this.headerSyncService.start();
+      console.log('[Agent] Header Sync Service started');
+    }
+
+    // Initialize wallet balance polling
+    if (minerAddr && !minerAddr.includes('PLACEHOLDER')) {
+      this.walletBalanceService = new WalletBalanceService({ address: minerAddr });
+      this.walletBalanceService.on('low_balance', (data) => {
+        this.emit('wallet:low_balance', data);
+      });
+      await this.walletBalanceService.start();
+    }
+
     // Initialize speculation engine
     this.initSpeculation();
 
@@ -304,6 +332,16 @@ export class Path402Agent extends EventEmitter {
     if (this.guiServer) {
       this.guiServer.stop();
       this.guiServer = null;
+    }
+
+    if (this.walletBalanceService) {
+      this.walletBalanceService.stop();
+      this.walletBalanceService = null;
+    }
+
+    if (this.headerSyncService) {
+      this.headerSyncService.stop();
+      this.headerSyncService = null;
     }
 
     if (this.relayService) {
@@ -1123,6 +1161,34 @@ export class Path402Agent extends EventEmitter {
    */
   getRelayService(): RelayService | null {
     return this.relayService;
+  }
+
+  /**
+   * Get the mining service instance (Proof of Indexing)
+   */
+  getMiningService(): ProofOfIndexingService | null {
+    return this.miningService;
+  }
+
+  /**
+   * Get the gossip node instance
+   */
+  getGossipNode(): GossipNode | null {
+    return this.gossipNode;
+  }
+
+  /**
+   * Get the header sync service instance (SPV validation)
+   */
+  getHeaderSyncService(): HeaderSyncService | null {
+    return this.headerSyncService;
+  }
+
+  /**
+   * Get the wallet balance service instance
+   */
+  getWalletBalanceService(): WalletBalanceService | null {
+    return this.walletBalanceService;
   }
 }
 

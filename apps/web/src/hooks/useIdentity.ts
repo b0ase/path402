@@ -4,6 +4,30 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 const API_BASE = 'http://localhost:4021';
 
+export interface Identity401Data {
+  handle: string;
+  identity: {
+    symbol: string;
+    tokenId: string;
+    broadcastStatus: string;
+  } | null;
+  strength: {
+    level: string;
+    levelNumber: number;
+    label: string;
+    score: number;
+  };
+  strandCount: number;
+  strands: Array<{
+    provider: string;
+    strandType: string;
+    strandSubtype: string | null;
+    label: string | null;
+    source: string;
+    onChain: boolean;
+  }>;
+}
+
 export interface IdentityToken {
   id: number;
   symbol: string;
@@ -101,6 +125,24 @@ export function useIdentity() {
     refetchInterval: 10000,
   });
 
+  const identity401Query = useQuery({
+    queryKey: ['identity-401'],
+    queryFn: async (): Promise<Identity401Data | null> => {
+      if (ipc?.getIdentity401) {
+        return ipc.getIdentity401();
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/identity/401`);
+        if (!res.ok) return null;
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 30000,
+    enabled: !!identityQuery.data,
+  });
+
   const mintMutation = useMutation({
     mutationFn: async (symbol: string) => {
       if (ipc?.mintIdentity) {
@@ -127,6 +169,7 @@ export function useIdentity() {
     identity: identityQuery.data ?? null,
     balance: balanceQuery.data ?? '0',
     callRecords: callRecordsQuery.data ?? [],
+    identity401: identity401Query.data ?? null,
     isLoading: identityQuery.isLoading,
     isMinting: mintMutation.isPending,
     mintError: mintMutation.error?.message ?? null,

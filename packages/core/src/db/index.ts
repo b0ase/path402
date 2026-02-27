@@ -1077,6 +1077,130 @@ export function pruneRelayTxs(maxAgeSeconds: number): number {
   return result.changes;
 }
 
+// ── Block Header Operations (SPV) ──────────────────────────────────
+
+export interface BlockHeaderRow {
+  height: number;
+  hash: string;
+  version: number;
+  merkle_root: string;
+  timestamp: number;
+  bits: number;
+  nonce: number;
+  prev_hash: string;
+}
+
+export function insertBlockHeaders(headers: BlockHeaderRow[]): number {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO block_headers (height, hash, version, merkle_root, timestamp, bits, nonce, prev_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let inserted = 0;
+  const tx = db.transaction(() => {
+    for (const h of headers) {
+      const result = stmt.run(h.height, h.hash, h.version, h.merkle_root, h.timestamp, h.bits, h.nonce, h.prev_hash);
+      if (result.changes > 0) inserted++;
+    }
+  });
+  tx();
+  return inserted;
+}
+
+export function getBlockHeaderByHeight(height: number): BlockHeaderRow | null {
+  return getDb().prepare('SELECT * FROM block_headers WHERE height = ?').get(height) as BlockHeaderRow | null;
+}
+
+export function getBlockHeaderByHash(hash: string): BlockHeaderRow | null {
+  return getDb().prepare('SELECT * FROM block_headers WHERE hash = ?').get(hash) as BlockHeaderRow | null;
+}
+
+export function getHighestHeaderHeight(): number {
+  const row = getDb().prepare('SELECT MAX(height) as max_height FROM block_headers').get() as { max_height: number | null };
+  return row.max_height ?? -1;
+}
+
+export function getBlockHeaderCount(): number {
+  const row = getDb().prepare('SELECT COUNT(*) as count FROM block_headers').get() as { count: number };
+  return row.count;
+}
+
+export function hasMerkleRoot(root: string, height: number): boolean {
+  const row = getDb().prepare(
+    'SELECT COUNT(*) as count FROM block_headers WHERE merkle_root = ? AND height = ?'
+  ).get(root, height) as { count: number };
+  return row.count > 0;
+}
+
+// ── Identity 401 Cache Operations ──────────────────────────────────
+
+export interface Identity401Strand {
+  id: number;
+  identity_token_id: string;
+  provider: string;
+  strand_type: string;
+  strand_subtype: string | null;
+  label: string | null;
+  source: string | null;
+  broadcast_status: string;
+  on_chain: number;
+  fetched_at: number;
+}
+
+export function upsertIdentity401Strand(strand: {
+  identity_token_id: string;
+  provider: string;
+  strand_type: string;
+  strand_subtype?: string | null;
+  label?: string | null;
+  source?: string | null;
+  broadcast_status?: string;
+  on_chain?: boolean;
+}): void {
+  getDb().prepare(`
+    INSERT INTO identity_401_cache
+      (identity_token_id, provider, strand_type, strand_subtype, label, source, broadcast_status, on_chain, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+    ON CONFLICT(identity_token_id, provider, strand_type, strand_subtype) DO UPDATE SET
+      label = excluded.label,
+      source = excluded.source,
+      broadcast_status = excluded.broadcast_status,
+      on_chain = excluded.on_chain,
+      fetched_at = excluded.fetched_at
+  `).run(
+    strand.identity_token_id,
+    strand.provider,
+    strand.strand_type,
+    strand.strand_subtype ?? null,
+    strand.label ?? null,
+    strand.source ?? null,
+    strand.broadcast_status ?? 'local',
+    strand.on_chain ? 1 : 0
+  );
+}
+
+export function getIdentity401Strands(identityTokenId: string): Identity401Strand[] {
+  return getDb().prepare(
+    'SELECT * FROM identity_401_cache WHERE identity_token_id = ? ORDER BY fetched_at DESC'
+  ).all(identityTokenId) as Identity401Strand[];
+}
+
+export function getIdentity401StrandCount(identityTokenId: string): number {
+  const row = getDb().prepare(
+    'SELECT COUNT(*) as count FROM identity_401_cache WHERE identity_token_id = ?'
+  ).get(identityTokenId) as { count: number };
+  return row.count;
+}
+
+export function clearIdentity401Cache(identityTokenId?: string): void {
+  if (identityTokenId) {
+    getDb().prepare('DELETE FROM identity_401_cache WHERE identity_token_id = ?').run(identityTokenId);
+  } else {
+    getDb().prepare('DELETE FROM identity_401_cache').run();
+  }
+}
+
 // ── Speculation Opportunities ──────────────────────────────────────
 
 export function getSpeculationOpportunities(): Array<{

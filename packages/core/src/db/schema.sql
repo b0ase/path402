@@ -489,6 +489,46 @@ CREATE TABLE IF NOT EXISTS relay_txs (
 CREATE INDEX IF NOT EXISTS idx_relay_txs_created ON relay_txs(created_at);
 CREATE INDEX IF NOT EXISTS idx_relay_txs_confirmed ON relay_txs(confirmed);
 
+-- ══════════════════════════════════════════════════════════════════
+-- IDENTITY_401_CACHE - Cached $401 identity strands from path402.com
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS identity_401_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  identity_token_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  strand_type TEXT NOT NULL,
+  strand_subtype TEXT,
+  label TEXT,
+  source TEXT,
+  broadcast_status TEXT DEFAULT 'local',
+  on_chain INTEGER NOT NULL DEFAULT 0,
+  fetched_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(identity_token_id, provider, strand_type, strand_subtype)
+);
+
+CREATE INDEX IF NOT EXISTS idx_identity_401_cache_token ON identity_401_cache(identity_token_id);
+CREATE INDEX IF NOT EXISTS idx_identity_401_cache_fetched ON identity_401_cache(fetched_at);
+
+-- ══════════════════════════════════════════════════════════════════
+-- BLOCK_HEADERS - BSV block headers for SPV validation
+-- Synced from Block Headers Service (BHS)
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS block_headers (
+  height INTEGER PRIMARY KEY,
+  hash TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  merkle_root TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  bits INTEGER NOT NULL,
+  nonce INTEGER NOT NULL,
+  prev_hash TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_block_headers_hash ON block_headers(hash);
+CREATE INDEX IF NOT EXISTS idx_block_headers_merkle ON block_headers(merkle_root);
+
 -- Default config
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('node_id', lower(hex(randomblob(16)))),

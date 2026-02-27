@@ -57,6 +57,7 @@ export interface ProofOfIndexingOptions {
 export class ProofOfIndexingService extends EventEmitter {
     private mempool: IndexerMempool;
     private isMining: boolean = false;
+    private isPaused: boolean = false;
     private gossipNode: GossipNode | null = null;
     private minerAddress: string;
     private broadcaster: MintBroadcaster | null = null;
@@ -143,6 +144,29 @@ export class ProofOfIndexingService extends EventEmitter {
     /** Get the difficulty adjuster for external use (e.g., feeding peer blocks) */
     getDifficultyAdjuster(): DifficultyAdjuster {
         return this.difficultyAdjuster;
+    }
+
+    /** Pause mining — stops new mining loops from starting */
+    pause(): void {
+        this.isPaused = true;
+        console.log('[PoI] Mining paused');
+        this.emit('mining_paused');
+    }
+
+    /** Resume mining — allows mining loops to start again */
+    resume(): void {
+        this.isPaused = false;
+        console.log('[PoI] Mining resumed');
+        this.emit('mining_resumed');
+        // Kick off mining if mempool has enough items
+        if (!this.isMining && this.mempool.size >= MIN_ITEMS_TO_MINE) {
+            this.startMining();
+        }
+    }
+
+    /** Check if mining is paused */
+    getPaused(): boolean {
+        return this.isPaused;
     }
 
     /** Get the current block height */
@@ -239,7 +263,7 @@ export class ProofOfIndexingService extends EventEmitter {
         });
 
         // Auto-start mining if we have enough items
-        if (!this.isMining && this.mempool.size >= MIN_ITEMS_TO_MINE) {
+        if (!this.isMining && !this.isPaused && this.mempool.size >= MIN_ITEMS_TO_MINE) {
             this.startMining();
         }
     }
@@ -248,7 +272,7 @@ export class ProofOfIndexingService extends EventEmitter {
      * Start the mining loop (non-blocking)
      */
     private async startMining() {
-        if (this.isMining) return;
+        if (this.isMining || this.isPaused) return;
         this.isMining = true;
 
         const currentDifficulty = this.difficultyAdjuster.difficulty();
@@ -398,6 +422,7 @@ export class ProofOfIndexingService extends EventEmitter {
             blocks_mined: this.blocksMined,
             block_height: this.blockHeight,
             is_mining: this.isMining,
+            is_paused: this.isPaused,
             mempool_size: this.mempool.size,
             last_block: this.lastBlockHash.slice(0, 16),
             miner_address: this.minerAddress,

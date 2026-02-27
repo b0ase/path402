@@ -19,7 +19,36 @@ export type CashboardActionableNodeType =
   | 'condition'
   | 'function'
   | 'service'
-  | 'database';
+  | 'database'
+  // Mining & production
+  | 'mint'
+  | 'counter'
+  | 'production'
+  // Network & comms
+  | 'gateway'
+  | 'router'
+  | 'discord'
+  | 'telegram'
+  // Marketplace & CRM
+  | 'salesforce'
+  | 'hubspot'
+  | 'stripe'
+  // Analytics & pricing
+  | 'calculator'
+  | 'finance'
+  | 'aggregator'
+  // Validation
+  | 'validator'
+  // Data filtering
+  | 'filter'
+  | 'sorter'
+  // Identity
+  | 'contact'
+  // AI platforms
+  | 'replicate'
+  | 'huggingface'
+  // Queue
+  | 'queue';
 
 // ── Agent Actions ───────────────────────────────────────────────
 
@@ -35,21 +64,60 @@ export type AgentAction =
   | 'get_status'
   | 'x402_chain'
   | 'economics'
+  | 'mining_status'
+  | 'relay_health'
+  | 'marketplace_data'
+  | 'dns_verify'
+  | 'network_peers'
+  | 'wallet_identity'
+  | 'price_analysis'
+  | 'holders_data'
+  | 'x402_discover'
   | 'noop';
 
 /** Default mapping from Cashboard node type → agent action */
 export const NODE_ACTION_MAP: Record<CashboardActionableNodeType, AgentAction> = {
-  payment:    'acquire',
-  wallets:    'wallet_status',
-  instrument: 'discover',
-  api:        'discover',
-  webhook:    'batch_discover',
-  trigger:    'get_status',
-  'ai-agent': 'x402_chain',
-  condition:  'evaluate',
-  function:   'economics',
-  service:    'serve',
-  database:   'token_stats',
+  // Original mappings
+  payment:      'acquire',
+  wallets:      'wallet_status',
+  instrument:   'discover',
+  api:          'discover',
+  webhook:      'batch_discover',
+  trigger:      'get_status',
+  'ai-agent':   'x402_chain',
+  condition:    'evaluate',
+  function:     'economics',
+  service:      'serve',
+  database:     'token_stats',
+  // Mining & production → mining_status
+  mint:         'mining_status',
+  counter:      'mining_status',
+  production:   'mining_status',
+  // Network & comms → network_peers
+  gateway:      'network_peers',
+  router:       'network_peers',
+  discord:      'network_peers',
+  telegram:     'network_peers',
+  // Marketplace & CRM → marketplace_data
+  salesforce:   'marketplace_data',
+  hubspot:      'marketplace_data',
+  stripe:       'marketplace_data',
+  // Analytics & pricing → price_analysis
+  calculator:   'price_analysis',
+  finance:      'price_analysis',
+  aggregator:   'price_analysis',
+  // Validation → dns_verify
+  validator:    'dns_verify',
+  // Data filtering → holders_data
+  filter:       'holders_data',
+  sorter:       'holders_data',
+  // Identity → wallet_identity
+  contact:      'wallet_identity',
+  // AI platforms → x402_discover
+  replicate:    'x402_discover',
+  huggingface:  'x402_discover',
+  // Queue → relay_health
+  queue:        'relay_health',
 };
 
 /** All actions the executor supports (for introspection) */
@@ -64,6 +132,15 @@ export const AVAILABLE_ACTIONS: AgentAction[] = [
   'get_status',
   'x402_chain',
   'economics',
+  'mining_status',
+  'relay_health',
+  'marketplace_data',
+  'dns_verify',
+  'network_peers',
+  'wallet_identity',
+  'price_analysis',
+  'holders_data',
+  'x402_discover',
   'noop',
 ];
 

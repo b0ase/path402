@@ -16,10 +16,11 @@ import { NODE_ACTION_MAP } from './types.js';
 
 // Service imports — lazy to avoid circular deps at module load
 import { discover } from '../services/client.js';
-import { evaluateBudget, getPortfolioSummary, getServableTokens } from '../services/wallet.js';
-import { explainEconomics } from '../services/pricing.js';
-import { getTokenStats, initDatabase } from '../services/database.js';
-import { chainAgents } from '../services/x402.js';
+import { evaluateBudget, getPortfolioSummary, getServableTokens, getAddress, getPublicKey, getServeHistory, getServeStats } from '../services/wallet.js';
+import { explainEconomics, generatePriceSchedule, estimateROI, calculateBreakeven, calculateTotalRevenue } from '../services/pricing.js';
+import { getTokenStats, initDatabase, getHolders, getRecentTransfers, verifyTokenOwnership } from '../services/database.js';
+import { chainAgents, discoverAgent, fetchAgentRegistry } from '../services/x402.js';
+import { verifyDomainDns, resolvePaymentAddress } from '../services/dns.js';
 
 export class CashboardExecutor {
   private agent: Path402Agent;
@@ -162,6 +163,88 @@ export class CashboardExecutor {
           response.currentSupply + 1,
           (params.projected_supply as number) ?? 1000
         );
+      }
+
+      case 'mining_status': {
+        const status = this.agent.getStatus();
+        return { mining: status.mining, uptime: status.uptime, nodeId: status.nodeId };
+      }
+
+      case 'relay_health': {
+        const relay = this.agent.getRelayService?.();
+        if (!relay) return { info: 'Relay service not available' };
+        return relay.health();
+      }
+
+      case 'marketplace_data': {
+        const bridge = this.agent.getMarketplaceBridge?.();
+        if (!bridge) return { info: 'Marketplace bridge not available' };
+        return bridge.getData();
+      }
+
+      case 'dns_verify': {
+        const domain = (params.domain as string) ?? '';
+        const code = (params.code as string) ?? '';
+        if (!domain) return { info: 'No domain provided — skipping dns_verify' };
+        if (code) {
+          return verifyDomainDns(domain, code);
+        }
+        return resolvePaymentAddress(domain);
+      }
+
+      case 'network_peers': {
+        const status = this.agent.getStatus();
+        const relay = this.agent.getRelayService?.();
+        return {
+          peers: status.peers,
+          relay: relay ? await relay.health() : null,
+        };
+      }
+
+      case 'wallet_identity': {
+        return {
+          address: getAddress(),
+          publicKey: getPublicKey(),
+          serveHistory: getServeHistory(),
+          serveStats: getServeStats(),
+          portfolio: getPortfolioSummary(),
+        };
+      }
+
+      case 'price_analysis': {
+        if (!url) return { info: 'No URL provided — skipping price_analysis' };
+        const response = await discover(url);
+        const buyerPosition = (params.buyer_position as number) ?? response.currentSupply + 1;
+        const projectedSupply = (params.projected_supply as number) ?? 1000;
+        return {
+          schedule: generatePriceSchedule(response.pricing),
+          roi: estimateROI(response.pricing, response.revenue, buyerPosition, projectedSupply),
+          breakeven: calculateBreakeven(response.pricing, response.revenue, buyerPosition),
+          totalRevenue: calculateTotalRevenue(response.pricing, response.revenue, buyerPosition, projectedSupply),
+        };
+      }
+
+      case 'holders_data': {
+        try {
+          initDatabase();
+          const address = (params.address as string) ?? '';
+          if (address) {
+            return { ownership: await verifyTokenOwnership(address) };
+          }
+          return {
+            holders: await getHolders(),
+            recentTransfers: await getRecentTransfers(),
+          };
+        } catch {
+          return { info: 'Holder data unavailable — database not configured' };
+        }
+      }
+
+      case 'x402_discover': {
+        if (url) {
+          return discoverAgent(url);
+        }
+        return fetchAgentRegistry();
       }
 
       case 'noop':
