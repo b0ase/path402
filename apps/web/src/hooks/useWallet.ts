@@ -28,6 +28,8 @@ declare global {
       getCallPeerId?: () => Promise<string | null>;
       onCallSignal?: (callback: (remotePeer: string, signal: any) => void) => void;
       removeCallSignalListener?: () => void;
+      // Voice room IPC
+      sendRoomVoiceSignal?: (peerId: string, signal: any) => Promise<void>;
       // Config IPC
       getConfig?: () => Promise<any>;
       setConfig?: (updates: Record<string, any>) => Promise<{ success: boolean; restart_required: boolean }>;
