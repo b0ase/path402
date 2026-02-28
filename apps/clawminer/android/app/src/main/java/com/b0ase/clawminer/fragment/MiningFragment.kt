@@ -31,7 +31,7 @@ class MiningFragment : Fragment(), DaemonStatusListener {
     private lateinit var syncStatusLabel: TextView
     private lateinit var blocksList: LinearLayout
 
-    private var isMining = false
+    private var isPaused = false
     private val numberFormat = NumberFormat.getNumberInstance(Locale.US)
 
     override fun onCreateView(
@@ -52,10 +52,10 @@ class MiningFragment : Fragment(), DaemonStatusListener {
         blocksList = view.findViewById(R.id.blocks_list)
 
         miningToggleBtn.setOnClickListener {
-            if (isMining) {
-                Mobile.pauseMining()
-            } else {
+            if (isPaused) {
                 Mobile.resumeMining()
+            } else {
+                Mobile.pauseMining()
             }
         }
     }
@@ -93,18 +93,26 @@ class MiningFragment : Fragment(), DaemonStatusListener {
         val hashRate = mining.optDouble("hash_rate", 0.0).toInt()
         val blocksMined = mining.optInt("blocks_mined", 0)
         val mempoolSize = mining.optInt("mempool_size", 0)
-        isMining = mining.optBoolean("is_mining", false)
+        val isMining = mining.optBoolean("is_mining", false)
+        isPaused = mining.optBoolean("is_paused", false)
 
         blocksMinedText.text = numberFormat.format(blocksMined)
         mempoolText.text = numberFormat.format(mempoolSize)
         miningProgress.progress = hashRate.coerceAtMost(100)
 
-        if (isMining) {
-            miningToggleBtn.text = "Pause Mining"
-            miningToggleBtn.setTextColor(Color.parseColor("#f97316"))
-        } else {
-            miningToggleBtn.text = "Start Mining"
-            miningToggleBtn.setTextColor(Color.parseColor("#00CC66"))
+        when {
+            isPaused -> {
+                miningToggleBtn.text = "Resume Mining"
+                miningToggleBtn.setTextColor(Color.parseColor("#00CC66"))
+            }
+            isMining -> {
+                miningToggleBtn.text = "Pause Mining"
+                miningToggleBtn.setTextColor(Color.parseColor("#f97316"))
+            }
+            else -> {
+                miningToggleBtn.text = "Mining — Waiting for Work"
+                miningToggleBtn.setTextColor(Color.parseColor("#a8a29e"))
+            }
         }
     }
 

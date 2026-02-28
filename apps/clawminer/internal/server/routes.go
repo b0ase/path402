@@ -28,6 +28,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/wallet/balance", s.handleWalletBalance)
 	mux.HandleFunc("GET /api/blocks/{hash}", s.handleBlockByHash)
 
+	// Content Engine routes
+	mux.HandleFunc("POST /api/content", s.handleContentCreate)
+	mux.HandleFunc("GET /api/content", s.handleContentList)
+	mux.HandleFunc("GET /api/content/stats", s.handleContentStats)
+	mux.HandleFunc("GET /api/content/serves", s.handleContentServes)
+	mux.HandleFunc("GET /api/content/{hash}", s.handleContentGet)
+	mux.HandleFunc("DELETE /api/content/{hash}", s.handleContentDelete)
+	mux.HandleFunc("POST /api/content/{hash}/announce", s.handleContentAnnounce)
+
 	// SPV Relay Mesh routes
 	if s.relaySvc != nil {
 		s.relaySvc.RegisterRoutes(mux)

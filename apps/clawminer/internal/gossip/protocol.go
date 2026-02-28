@@ -179,6 +179,24 @@ type TxResponsePayload struct {
 	BlockHash string `json:"block_hash,omitempty"`
 }
 
+// Content Payloads — matches TypeScript ContentOfferPayload / ContentRequestPayload
+
+type ContentOfferPayload struct {
+	TokenID       string `json:"token_id"`
+	ContentHash   string `json:"content_hash"`
+	ContentSize   int    `json:"content_size"`
+	ContentType   string `json:"content_type,omitempty"`
+	PriceSats     int    `json:"price_sats"`
+	ServerAddress string `json:"server_address"`
+}
+
+type ContentRequestPayload struct {
+	TokenID          string `json:"token_id"`
+	ContentHash      string `json:"content_hash"`
+	RequesterAddress string `json:"requester_address"`
+	PaymentTxid      string `json:"payment_txid,omitempty"`
+}
+
 type PingPayload struct {
 	Timestamp int64  `json:"timestamp"`
 	Nonce     string `json:"nonce"`
@@ -274,6 +292,14 @@ func NewTxRequest(nodeID, txid string) (*GossipMessage, error) {
 	return newMessage(MsgTxRequest, nodeID, &TxRequestPayload{
 		Txid: txid,
 	}, MessageTTL)
+}
+
+func NewContentOffer(nodeID string, offer *ContentOfferPayload) (*GossipMessage, error) {
+	return newMessage(MsgContentOffer, nodeID, offer, MessageTTL)
+}
+
+func NewContentRequest(nodeID string, req *ContentRequestPayload) (*GossipMessage, error) {
+	return newMessage(MsgContentRequest, nodeID, req, MessageTTL)
 }
 
 func NewTxResponse(nodeID, txid, rawHex string, confirmed bool, blockHash string) (*GossipMessage, error) {

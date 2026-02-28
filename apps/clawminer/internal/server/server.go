@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/b0ase/path402/apps/clawminer/internal/content"
 	"github.com/b0ase/path402/apps/clawminer/internal/relay"
 )
 
@@ -40,13 +41,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ContentAnnouncer broadcasts a CONTENT_OFFER to the gossip network.
+type ContentAnnouncer func(tokenID, contentHash string, contentSize int, contentType string, priceSats int, serverAddress string)
+
 // Server is the HTTP JSON API for the ClawMiner daemon.
 type Server struct {
-	httpSrv      *http.Server
-	daemon       DaemonInfo
-	relaySvc     *relay.Service
-	bind         string
-	port         int
+	httpSrv           *http.Server
+	daemon            DaemonInfo
+	relaySvc          *relay.Service
+	contentStore      *content.Store
+	contentAnnouncer  ContentAnnouncer
+	bind              string
+	port              int
 }
 
 // New creates an HTTP server. relaySvc may be nil if relay is not enabled.
@@ -67,10 +73,16 @@ func New(bind string, port int, daemon DaemonInfo, relaySvc ...*relay.Service) *
 // SetRelayService attaches the relay service and mounts its HTTP routes.
 func (s *Server) SetRelayService(svc *relay.Service) {
 	s.relaySvc = svc
-	// Routes already registered via registerRoutes if relaySvc is set,
-	// but we can also mount them onto the existing mux at construction time.
-	// Since Go 1.22 ServeMux is immutable after ListenAndServe, we register
-	// relay routes in registerRoutes() which checks s.relaySvc.
+}
+
+// SetContentStore attaches the content store for content API routes.
+func (s *Server) SetContentStore(store *content.Store) {
+	s.contentStore = store
+}
+
+// SetContentAnnouncer sets the callback for broadcasting content offers.
+func (s *Server) SetContentAnnouncer(fn ContentAnnouncer) {
+	s.contentAnnouncer = fn
 }
 
 // Start pre-acquires the port and begins serving HTTP requests.

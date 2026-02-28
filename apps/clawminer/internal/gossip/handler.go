@@ -20,13 +20,21 @@ type TxRelayObserver func(senderID string, payload *TxRelayPayload)
 // TxRequestObserver is called when a TX_REQUEST message is received from a peer.
 type TxRequestObserver func(senderID string, payload *TxRequestPayload)
 
+// ContentOfferObserver is called when a CONTENT_OFFER message is received.
+type ContentOfferObserver func(senderID string, payload *ContentOfferPayload)
+
+// ContentRequestObserver is called when a CONTENT_REQUEST message is received.
+type ContentRequestObserver func(senderID string, payload *ContentRequestPayload)
+
 // Handler dispatches incoming gossip messages to the appropriate db operations.
 type Handler struct {
-	nodeID            string
-	submitWork        WorkSubmitter
-	blockObserver     BlockObserver
-	txRelayObserver   TxRelayObserver
-	txRequestObserver TxRequestObserver
+	nodeID                 string
+	submitWork             WorkSubmitter
+	blockObserver          BlockObserver
+	txRelayObserver        TxRelayObserver
+	txRequestObserver      TxRequestObserver
+	contentOfferObserver   ContentOfferObserver
+	contentRequestObserver ContentRequestObserver
 }
 
 func NewHandler(nodeID string) *Handler {
@@ -53,6 +61,16 @@ func (h *Handler) SetTxRequestObserver(fn TxRequestObserver) {
 	h.txRequestObserver = fn
 }
 
+// SetContentOfferObserver registers a callback for CONTENT_OFFER messages.
+func (h *Handler) SetContentOfferObserver(fn ContentOfferObserver) {
+	h.contentOfferObserver = fn
+}
+
+// SetContentRequestObserver registers a callback for CONTENT_REQUEST messages.
+func (h *Handler) SetContentRequestObserver(fn ContentRequestObserver) {
+	h.contentRequestObserver = fn
+}
+
 // HandleMessage processes an incoming GossipMessage.
 func (h *Handler) HandleMessage(msg *GossipMessage) {
 	switch msg.Type {
@@ -72,6 +90,10 @@ func (h *Handler) HandleMessage(msg *GossipMessage) {
 		h.handleTxRelay(msg)
 	case MsgTxRequest:
 		h.handleTxRequest(msg)
+	case MsgContentOffer:
+		h.handleContentOffer(msg)
+	case MsgContentRequest:
+		h.handleContentRequest(msg)
 	case MsgPing:
 		h.handlePing(msg)
 	default:
@@ -235,6 +257,54 @@ func (h *Handler) handleTxRequest(msg *GossipMessage) {
 
 	if h.txRequestObserver != nil {
 		h.txRequestObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleContentOffer(msg *GossipMessage) {
+	var payload ContentOfferPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad CONTENT_OFFER payload: %v", err)
+		return
+	}
+
+	hashShort := payload.ContentHash
+	if len(hashShort) > 16 {
+		hashShort = hashShort[:16]
+	}
+	log.Printf("[gossip] CONTENT_OFFER: %s (%d bytes, %d sats) from %s",
+		hashShort, payload.ContentSize, payload.PriceSats, msg.SenderID[:min(16, len(msg.SenderID))])
+
+	if h.contentOfferObserver != nil {
+		h.contentOfferObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleContentRequest(msg *GossipMessage) {
+	var payload ContentRequestPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad CONTENT_REQUEST payload: %v", err)
+		return
+	}
+
+	hashShort := payload.ContentHash
+	if len(hashShort) > 16 {
+		hashShort = hashShort[:16]
+	}
+	log.Printf("[gossip] CONTENT_REQUEST: %s from %s (payment: %s)",
+		hashShort, msg.SenderID[:min(16, len(msg.SenderID))], payload.PaymentTxid)
+
+	// Feed to mining pipeline — serving content is real work
+	if h.submitWork != nil && payload.PaymentTxid != "" {
+		h.submitWork("content:"+payload.ContentHash, "content_served", map[string]interface{}{
+			"token_id":     payload.TokenID,
+			"content_hash": payload.ContentHash,
+			"requester":    payload.RequesterAddress,
+			"payment_txid": payload.PaymentTxid,
+		})
+	}
+
+	if h.contentRequestObserver != nil {
+		h.contentRequestObserver(msg.SenderID, &payload)
 	}
 }
 

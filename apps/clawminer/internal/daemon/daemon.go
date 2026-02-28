@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/config"
+	"github.com/b0ase/path402/apps/clawminer/internal/content"
 	"github.com/b0ase/path402/apps/clawminer/internal/db"
 	"github.com/b0ase/path402/apps/clawminer/internal/gossip"
 	"github.com/b0ase/path402/apps/clawminer/internal/headers"
@@ -26,22 +27,24 @@ const lowBalanceThreshold int64 = 5000
 
 // Daemon orchestrates all ClawMiner subsystems.
 type Daemon struct {
-	cfg        *config.Config
-	nodeID     string
-	startTime  time.Time
-	wallet     *wallet.Wallet
-	gossipNode *gossip.Node
-	miner      *mining.ProofOfIndexingService
-	relaySvc   *relay.Service
-	headerSync *headers.SyncService
-	httpSrv    *server.Server
-	stopCh     chan struct{}
+	cfg          *config.Config
+	nodeID       string
+	startTime    time.Time
+	wallet       *wallet.Wallet
+	gossipNode   *gossip.Node
+	miner        *mining.ProofOfIndexingService
+	relaySvc     *relay.Service
+	headerSync   *headers.SyncService
+	contentStore *content.Store
+	httpSrv      *server.Server
+	stopCh       chan struct{}
 
 	// Balance tracking (written by balanceLoop, read by WalletStatus)
 	balanceMu       sync.RWMutex
 	balanceSatoshis int64
 	balanceFunded   bool
 	balanceChecked  bool // true once first check completes
+	balanceStopCh   chan struct{}
 }
 
 // New creates a new daemon instance.
@@ -406,14 +409,70 @@ func (d *Daemon) Start() error {
 
 	log.Println("[daemon] Relay Service started (SPV Relay Mesh)")
 
+	// 5.6 Initialize Content Store
+	contentStore, err := content.NewStore(d.cfg.DataDir)
+	if err != nil {
+		log.Printf("[daemon] WARNING: Content store failed to init: %v", err)
+	} else {
+		d.contentStore = contentStore
+		log.Println("[daemon] Content Store initialized")
+
+		// Wire gossip CONTENT_OFFER → log available content from peers
+		handler.SetContentOfferObserver(func(senderID string, payload *gossip.ContentOfferPayload) {
+			log.Printf("[content] Offer from %s: %s (%d bytes, %d sats)",
+				senderID[:min(16, len(senderID))], payload.ContentHash[:min(16, len(payload.ContentHash))],
+				payload.ContentSize, payload.PriceSats)
+		})
+
+		// Wire gossip CONTENT_REQUEST → serve content if we have it
+		handler.SetContentRequestObserver(func(senderID string, payload *gossip.ContentRequestPayload) {
+			if !d.contentStore.Has(payload.ContentHash) {
+				return
+			}
+			log.Printf("[content] Serving %s to %s",
+				payload.ContentHash[:min(16, len(payload.ContentHash))],
+				senderID[:min(16, len(senderID))])
+
+			// Log the serve event
+			d.contentStore.LogServe(payload.TokenID, payload.RequesterAddress, senderID, 0, payload.PaymentTxid)
+		})
+	}
+
 	// 6. Start periodic status logging
 	go d.statusLoop()
 
 	// 6.5 Start balance monitoring (every 60s)
+	d.balanceStopCh = make(chan struct{})
 	go d.balanceLoop()
 
 	// 7. Start HTTP API
 	d.httpSrv = server.New(d.cfg.API.Bind, d.cfg.API.Port, d, d.relaySvc)
+	if d.contentStore != nil {
+		d.httpSrv.SetContentStore(d.contentStore)
+		// Wire content announcer: API announce → gossip broadcast
+		d.httpSrv.SetContentAnnouncer(func(tokenID, contentHash string, contentSize int, contentType string, priceSats int, serverAddress string) {
+			if d.gossipNode == nil {
+				return
+			}
+			msg, err := gossip.NewContentOffer(d.nodeID, &gossip.ContentOfferPayload{
+				TokenID:       tokenID,
+				ContentHash:   contentHash,
+				ContentSize:   contentSize,
+				ContentType:   contentType,
+				PriceSats:     priceSats,
+				ServerAddress: serverAddress,
+			})
+			if err != nil {
+				log.Printf("[content] Failed to create CONTENT_OFFER: %v", err)
+				return
+			}
+			if err := d.gossipNode.Publish(msg); err != nil {
+				log.Printf("[content] Failed to publish CONTENT_OFFER: %v", err)
+			} else {
+				log.Printf("[content] Announced %s (%d sats)", contentHash[:min(16, len(contentHash))], priceSats)
+			}
+		})
+	}
 	if port, err := d.httpSrv.Start(); err != nil {
 		log.Printf("[daemon] WARNING: HTTP API failed to start: %v (mining continues)", err)
 	} else {
@@ -489,10 +548,27 @@ func (d *Daemon) balanceLoop() {
 		select {
 		case <-d.stopCh:
 			return
+		case <-d.balanceStopCh:
+			return
 		case <-ticker.C:
 			check()
 		}
 	}
+}
+
+// restartBalanceLoop stops the current balance loop and starts a new one for the current wallet.
+func (d *Daemon) restartBalanceLoop() {
+	if d.balanceStopCh != nil {
+		close(d.balanceStopCh)
+	}
+	d.balanceMu.Lock()
+	d.balanceChecked = false
+	d.balanceSatoshis = 0
+	d.balanceFunded = false
+	d.balanceMu.Unlock()
+
+	d.balanceStopCh = make(chan struct{})
+	go d.balanceLoop()
 }
 
 // Stop shuts down all subsystems.
@@ -565,6 +641,16 @@ func (d *Daemon) IsMiningPaused() bool {
 	return true
 }
 
+// ContentStatus returns content store statistics.
+func (d *Daemon) ContentStatus() map[string]interface{} {
+	if d.contentStore == nil {
+		return map[string]interface{}{"enabled": false}
+	}
+	stats := d.contentStore.Stats()
+	stats["enabled"] = true
+	return stats
+}
+
 func (d *Daemon) HeaderSyncStatus() map[string]interface{} {
 	if d.headerSync == nil {
 		return map[string]interface{}{"enabled": false}
@@ -609,6 +695,15 @@ func (d *Daemon) ImportWallet(wif string) error {
 	}
 	d.wallet = w
 	log.Printf("[wallet] Imported wallet: %s", w.Address)
+
+	// Restart balance loop with new wallet address
+	d.restartBalanceLoop()
+
+	// Update miner address so new blocks mine to the imported wallet
+	if d.miner != nil {
+		d.miner.SetMinerAddress(w.Address)
+	}
+
 	return nil
 }
 
@@ -631,6 +726,13 @@ func (d *Daemon) GenerateNewWallet() error {
 	}
 	d.wallet = w
 	log.Printf("[wallet] Generated new wallet: %s", w.Address)
+
+	d.restartBalanceLoop()
+
+	if d.miner != nil {
+		d.miner.SetMinerAddress(w.Address)
+	}
+
 	return nil
 }
 

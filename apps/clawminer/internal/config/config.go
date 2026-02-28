@@ -79,9 +79,7 @@ func DefaultConfig() *Config {
 			Port: 8402,
 			Bind: "127.0.0.1",
 		},
-		Wallet: WalletConfig{
-			Address: "1HNcvDZNosbxWeB9grD769u3bAKYNKRHTs",
-		},
+		Wallet: WalletConfig{},
 		Mining: MiningConfig{
 			Enabled:           true,
 			Difficulty:        3,

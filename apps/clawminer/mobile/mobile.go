@@ -93,6 +93,7 @@ func GetStatus() string {
 		"mining":    d.MiningStatus(),
 		"headers":   d.HeaderSyncStatus(),
 		"wallet":    d.WalletStatus(),
+		"content":   d.ContentStatus(),
 	}
 
 	data, _ := json.Marshal(status)
@@ -223,6 +224,18 @@ func GetBlockByHash(hash string) string {
 		return string(data)
 	}
 	data, _ := json.Marshal(block)
+	return string(data)
+}
+
+// GetContentStatus returns content store stats as a JSON string.
+func GetContentStatus() string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"enabled":false}`
+	}
+	data, _ := json.Marshal(d.ContentStatus())
 	return string(data)
 }
 

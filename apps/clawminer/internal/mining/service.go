@@ -160,6 +160,14 @@ func (s *ProofOfIndexingService) IsPaused() bool {
 	return s.paused
 }
 
+// SetMinerAddress updates the miner address for future blocks.
+func (s *ProofOfIndexingService) SetMinerAddress(addr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.MinerAddress = addr
+	log.Printf("[mining] Miner address updated to %s", addr)
+}
+
 // SubmitWork adds a work item to the mempool and triggers mining if threshold met.
 func (s *ProofOfIndexingService) SubmitWork(id, workType string, data interface{}) {
 	log.Printf("[mining] Work submitted: %s %s", workType, id)
@@ -200,6 +208,7 @@ func (s *ProofOfIndexingService) Status() map[string]interface{} {
 		"hash_rate":     hashRate,
 		"mempool_size":  s.mempool.Size(),
 		"is_mining":     s.isMining,
+		"is_paused":     s.paused,
 		"last_block":    s.lastBlockHash[:16],
 		"miner_address": s.config.MinerAddress,
 		"difficulty":    difficulty,
