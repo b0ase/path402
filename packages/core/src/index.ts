@@ -160,6 +160,11 @@ export type { PublishOptions, PublishResult, FileEntry } from "./publish/publish
 export { ProjectManifestSchema, parseManifest, createManifestFromFlags, generateManifestTemplate } from "./publish/manifest.js";
 export type { ProjectManifest } from "./publish/manifest.js";
 
+// Narrative engine exports
+export { generateSeries, generateCharacter, generateStory, generateScript, generateFullContent } from "./narrative/engine.js";
+export { seriesPrompt, characterPrompt, storyPrompt, scriptPrompt } from "./narrative/prompts.js";
+export type { ContentType, Series, Character, Story, Script, ScriptSegment, GeneratedContent } from "./narrative/types.js";
+
 // ── Global Services ─────────────────────────────────────────────
 import { ProofOfIndexingService } from "./services/mining.js";
 
