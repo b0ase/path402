@@ -1,7 +1,11 @@
 package wallet
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log"
 
@@ -93,4 +97,51 @@ func RandomBytes(n int) []byte {
 	b := make([]byte, n)
 	rand.Read(b)
 	return b
+}
+
+// EncryptWIF encrypts a WIF string using AES-256-GCM with a passphrase-derived key.
+// Returns base64-encoded ciphertext.
+func EncryptWIF(wif string, passphrase string) (string, error) {
+	key := sha256.Sum256([]byte(passphrase))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("create GCM: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(wif), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// DecryptWIF decrypts a base64-encoded AES-256-GCM ciphertext back to a WIF string.
+func DecryptWIF(encrypted string, passphrase string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("decode base64: %w", err)
+	}
+	key := sha256.Sum256([]byte(passphrase))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("create GCM: %w", err)
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt: %w", err)
+	}
+	return string(plaintext), nil
 }

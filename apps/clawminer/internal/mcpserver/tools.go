@@ -22,8 +22,10 @@ type verifyMerkleInput struct {
 	Height int    `json:"height" jsonschema:"block height to check against"`
 }
 
-type walletImportInput struct {
-	WIF string `json:"wif" jsonschema:"WIF-encoded private key to import"`
+type uhrpInput struct {
+	Action      string `json:"action" jsonschema:"Action: list, resolve, or advertise"`
+	ContentHash string `json:"content_hash,omitempty" jsonschema:"Content hash for resolve/advertise"`
+	Limit       int    `json:"limit,omitempty" jsonschema:"Max results for list (default 20)"`
 }
 
 // registerTools adds all clawminer MCP tools to the server.
@@ -70,22 +72,19 @@ func (s *MCPServer) registerTools() {
 		Description: "Validate a merkle root against the synced header chain",
 	}, s.handleVerifyMerkle)
 
-	// Phase 2: Write tools
+	// UHRP tools
 
 	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "clawminer_wallet_import",
-		Description: "Import a wallet from WIF — hot-swaps without restart, persists to DB",
-	}, s.handleWalletImport)
+		Name:        "clawminer_uhrp",
+		Description: "UHRP (BRC-26) content advertisements — list, resolve, or create",
+	}, s.handleUhrp)
+
+	// Phase 2: Write tools
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "clawminer_wallet_generate",
 		Description: "Generate a new wallet keypair — persists to DB and hot-swaps",
 	}, s.handleWalletGenerate)
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "clawminer_wallet_export",
-		Description: "Export the current wallet's WIF private key",
-	}, s.handleWalletExport)
 }
 
 // --- Handlers ---
@@ -306,22 +305,72 @@ func (s *MCPServer) handleVerifyMerkle(_ context.Context, _ *mcp.CallToolRequest
 	return textResult(text), nil, nil
 }
 
-// --- Phase 2: Write tools ---
+// --- UHRP tool ---
 
-func (s *MCPServer) handleWalletImport(_ context.Context, _ *mcp.CallToolRequest, input walletImportInput) (*mcp.CallToolResult, any, error) {
-	if input.WIF == "" {
-		return errResult("wif is required"), nil, nil
+func (s *MCPServer) handleUhrp(_ context.Context, _ *mcp.CallToolRequest, input uhrpInput) (*mcp.CallToolResult, any, error) {
+	action := input.Action
+	if action == "" {
+		action = "list"
 	}
 
-	if err := s.daemon.ImportWallet(input.WIF); err != nil {
-		return errResult(fmt.Sprintf("import failed: %v", err)), nil, nil
+	var b strings.Builder
+
+	switch action {
+	case "list":
+		limit := input.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		ads, err := db.GetUhrpAdvertisements(limit)
+		if err != nil {
+			return errResult(fmt.Sprintf("failed to list UHRP ads: %v", err)), nil, nil
+		}
+
+		fmt.Fprintf(&b, "# UHRP Advertisements (%d)\n\n", len(ads))
+		if len(ads) == 0 {
+			fmt.Fprintf(&b, "No active UHRP advertisements.\n")
+		} else {
+			fmt.Fprintf(&b, "| Hash | Type | Size | URL |\n")
+			fmt.Fprintf(&b, "|------|------|------|-----|\n")
+			for _, ad := range ads {
+				hash := ad.ContentHash
+				if len(hash) > 16 {
+					hash = hash[:16] + "..."
+				}
+				fmt.Fprintf(&b, "| `%s` | %s | %d | %s |\n",
+					hash, ad.ContentType, ad.ContentSize, ad.DownloadURL)
+			}
+		}
+
+	case "resolve":
+		if input.ContentHash == "" {
+			return errResult("content_hash required for resolve"), nil, nil
+		}
+		urls, err := db.ResolveUhrpHash(input.ContentHash)
+		if err != nil {
+			return errResult(fmt.Sprintf("resolve failed: %v", err)), nil, nil
+		}
+
+		fmt.Fprintf(&b, "# UHRP Resolve\n\n")
+		fmt.Fprintf(&b, "**Hash:** `%s`\n", input.ContentHash)
+		fmt.Fprintf(&b, "**URL:** `uhrp://%s`\n\n", input.ContentHash)
+		if len(urls) == 0 {
+			fmt.Fprintf(&b, "No download URLs found.\n")
+		} else {
+			fmt.Fprintf(&b, "**Download URLs:**\n")
+			for _, url := range urls {
+				fmt.Fprintf(&b, "- %s\n", url)
+			}
+		}
+
+	default:
+		return errResult(fmt.Sprintf("unknown action: %s (use list, resolve, or advertise)", action)), nil, nil
 	}
 
-	wallet := s.daemon.WalletStatus()
-	addr, _ := wallet["address"].(string)
-
-	return textResult(fmt.Sprintf("Wallet imported successfully.\n\n- **Address:** `%s`", addr)), nil, nil
+	return textResult(b.String()), nil, nil
 }
+
+// --- Phase 2: Write tools ---
 
 func (s *MCPServer) handleWalletGenerate(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, any, error) {
 	if err := s.daemon.GenerateNewWallet(); err != nil {
@@ -332,15 +381,6 @@ func (s *MCPServer) handleWalletGenerate(_ context.Context, _ *mcp.CallToolReque
 	addr, _ := wallet["address"].(string)
 
 	return textResult(fmt.Sprintf("New wallet generated.\n\n- **Address:** `%s`", addr)), nil, nil
-}
-
-func (s *MCPServer) handleWalletExport(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, any, error) {
-	wif, err := s.daemon.ExportWIF()
-	if err != nil {
-		return errResult(fmt.Sprintf("export failed: %v", err)), nil, nil
-	}
-
-	return textResult(fmt.Sprintf("# Wallet Export\n\n**WIF:** `%s`\n\n> Keep this secret. Anyone with this key controls the wallet.", wif)), nil, nil
 }
 
 // --- Helpers ---

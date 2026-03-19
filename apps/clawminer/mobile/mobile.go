@@ -20,7 +20,7 @@ var (
 	d       *daemon.Daemon
 	running bool
 	apiPort int
-	version = "0.1.0"
+	version = "0.4.0"
 )
 
 // Start initialises and starts the ClawMiner daemon.
@@ -94,6 +94,7 @@ func GetStatus() string {
 		"headers":   d.HeaderSyncStatus(),
 		"wallet":    d.WalletStatus(),
 		"content":   d.ContentStatus(),
+		"scanner":   d.ScannerStatus(),
 	}
 
 	data, _ := json.Marshal(status)
@@ -239,6 +240,18 @@ func GetContentStatus() string {
 	return string(data)
 }
 
+// GetScannerStatus returns BSV-20 token scanner status as a JSON string.
+func GetScannerStatus() string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d == nil {
+		return `{"enabled":false}`
+	}
+	data, _ := json.Marshal(d.ScannerStatus())
+	return string(data)
+}
+
 // PauseMining pauses the mining loop.
 func PauseMining() {
 	mu.Lock()
@@ -255,22 +268,4 @@ func ResumeMining() {
 	if d != nil {
 		d.ResumeMining()
 	}
-}
-
-// ExportWIF returns the current wallet's WIF private key.
-// Returns JSON: {"wif":"K..."} or {"error":"..."}.
-func ExportWIF() string {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if d == nil {
-		return `{"error":"daemon not running"}`
-	}
-	wif, err := d.ExportWIF()
-	if err != nil {
-		data, _ := json.Marshal(map[string]string{"error": err.Error()})
-		return string(data)
-	}
-	data, _ := json.Marshal(map[string]string{"wif": wif})
-	return string(data)
 }

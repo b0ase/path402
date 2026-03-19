@@ -21,8 +21,10 @@ type APIConfig struct {
 }
 
 type WalletConfig struct {
-	Key     string `yaml:"key"`
-	Address string `yaml:"address"` // Public BSV address for mining rewards (no private key needed)
+	Key              string `yaml:"key"`
+	Address          string `yaml:"address"`            // Public BSV address for mining rewards (no private key needed)
+	MaxTxSatoshis    int64  `yaml:"max_tx_satoshis"`    // Max per-transaction spend (0 = unlimited)
+	MaxDailySatoshis int64  `yaml:"max_daily_satoshis"` // Max daily spend (0 = unlimited)
 }
 
 type MiningConfig struct {
@@ -48,6 +50,16 @@ type HeadersConfig struct {
 	BatchSize    int           `yaml:"batch_size"`
 }
 
+type ScannerConfig struct {
+	Enabled        bool          `yaml:"enabled"`
+	PollInterval   time.Duration `yaml:"poll_interval"`
+	BatchSize      int           `yaml:"batch_size"`
+	APIURL         string        `yaml:"api_url"`
+	WocURL         string        `yaml:"woc_url"`
+	OneSatURL      string        `yaml:"onesat_url"`
+	VerifyInterval int           `yaml:"verify_interval"` // verify one token every N ticks (0 = disabled)
+}
+
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
@@ -60,6 +72,7 @@ type Config struct {
 	Wallet  WalletConfig  `yaml:"wallet"`
 	Mining  MiningConfig  `yaml:"mining"`
 	Headers HeadersConfig `yaml:"headers"`
+	Scanner ScannerConfig `yaml:"scanner"`
 	Log     LogConfig     `yaml:"log"`
 }
 
@@ -98,6 +111,15 @@ func DefaultConfig() *Config {
 			SyncOnBoot:   true,
 			PollInterval: 30 * time.Second,
 			BatchSize:    2000,
+		},
+		Scanner: ScannerConfig{
+			Enabled:        true,
+			PollInterval:   60 * time.Second,
+			BatchSize:      20,
+			APIURL:         "https://ordinals.gorillapool.io/api",
+			WocURL:         "https://api.whatsonchain.com/v1/bsv/main",
+			OneSatURL:      "https://ordinals.gorillapool.io/api/bsv20",
+			VerifyInterval: 5,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -162,6 +184,12 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("CLAWMINER_BHS_API_KEY"); v != "" {
 		c.Headers.BHSAPIKey = v
+	}
+	if v := os.Getenv("CLAWMINER_WOC_URL"); v != "" {
+		c.Scanner.WocURL = v
+	}
+	if v := os.Getenv("CLAWMINER_ONESAT_URL"); v != "" {
+		c.Scanner.OneSatURL = v
 	}
 }
 

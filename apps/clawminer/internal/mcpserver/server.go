@@ -17,8 +17,6 @@ type DaemonInfo interface {
 	HeaderSyncStatus() map[string]interface{}
 	WalletStatus() map[string]interface{}
 	ValidateMerkleRoot(root string, height int) (bool, error)
-	ImportWallet(wif string) error
-	ExportWIF() (string, error)
 	GenerateNewWallet() error
 }
 

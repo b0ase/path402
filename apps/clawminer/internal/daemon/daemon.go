@@ -16,6 +16,7 @@ import (
 	"github.com/b0ase/path402/apps/clawminer/internal/headers"
 	"github.com/b0ase/path402/apps/clawminer/internal/mining"
 	"github.com/b0ase/path402/apps/clawminer/internal/relay"
+	"github.com/b0ase/path402/apps/clawminer/internal/scanner"
 	"github.com/b0ase/path402/apps/clawminer/internal/server"
 	"github.com/b0ase/path402/apps/clawminer/internal/wallet"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -24,6 +25,25 @@ import (
 // lowBalanceThreshold is the satoshi level below which we warn.
 // 5000 sat (~$0.002) is enough for several mints.
 const lowBalanceThreshold int64 = 5000
+
+// walletPassphrase derives a device-bound encryption passphrase from the node ID.
+// This ties the encrypted wallet to this specific device instance.
+func (d *Daemon) walletPassphrase() string {
+	return "clawminer:" + d.nodeID
+}
+
+// logWalletAudit records a wallet operation to the audit log in the DB.
+func (d *Daemon) logWalletAudit(action string, address string) {
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	entry := fmt.Sprintf("%s|%s|%s", timestamp, action, address)
+	// Read existing log, append, and write back (no AppendConfig in db package)
+	existing, _ := db.GetConfig("wallet_audit_log")
+	newLog := existing + entry + "\n"
+	if err := db.SetConfig("wallet_audit_log", newLog); err != nil {
+		log.Printf("[wallet] Audit log failed: %v", err)
+	}
+	log.Printf("[wallet] AUDIT: %s address=%s", action, address)
+}
 
 // Daemon orchestrates all ClawMiner subsystems.
 type Daemon struct {
@@ -36,6 +56,7 @@ type Daemon struct {
 	relaySvc     *relay.Service
 	headerSync   *headers.SyncService
 	contentStore *content.Store
+	scanner      *scanner.Service
 	httpSrv      *server.Server
 	stopCh       chan struct{}
 
@@ -94,16 +115,46 @@ func (d *Daemon) Start() error {
 		}
 		minerAddr = d.cfg.Wallet.Address
 	}
-	if minerAddr == "" {
-		// Try loading a previously saved WIF from DB
-		if savedWIF, err := db.GetConfig("wallet_wif"); err == nil && savedWIF != "" {
-			w, err := wallet.Load(savedWIF)
+	// Always try loading signing wallet from DB if we don't have one yet
+	// (needed for native broadcasting even when reward address is configured separately)
+	if d.wallet == nil {
+		// Try encrypted key first (new format)
+		if encWIF, err := db.GetConfig("wallet_wif_enc"); err == nil && encWIF != "" {
+			decrypted, err := wallet.DecryptWIF(encWIF, d.walletPassphrase())
 			if err != nil {
-				log.Printf("[wallet] DB WIF load failed: %v (will regenerate)", err)
+				log.Printf("[wallet] Encrypted WIF decrypt failed: %v (will try legacy)", err)
 			} else {
-				d.wallet = w
-				minerAddr = w.Address
-				log.Printf("[wallet] Loaded persisted wallet: %s", minerAddr)
+				w, err := wallet.Load(decrypted)
+				if err != nil {
+					log.Printf("[wallet] Decrypted WIF load failed: %v (will regenerate)", err)
+				} else {
+					d.wallet = w
+					if minerAddr == "" {
+						minerAddr = w.Address
+					}
+					log.Printf("[wallet] Loaded encrypted signing wallet: %s", w.Address)
+				}
+			}
+		}
+		// Legacy fallback: unencrypted WIF (migrate on next save)
+		if d.wallet == nil {
+			if savedWIF, err := db.GetConfig("wallet_wif"); err == nil && savedWIF != "" {
+				w, err := wallet.Load(savedWIF)
+				if err != nil {
+					log.Printf("[wallet] Legacy WIF load failed: %v (will regenerate)", err)
+				} else {
+					d.wallet = w
+					if minerAddr == "" {
+						minerAddr = w.Address
+					}
+					log.Printf("[wallet] Loaded legacy wallet: %s (will encrypt on next operation)", w.Address)
+					// Migrate: encrypt and remove plaintext
+					if enc, err := wallet.EncryptWIF(savedWIF, d.walletPassphrase()); err == nil {
+						db.SetConfig("wallet_wif_enc", enc)
+						db.SetConfig("wallet_wif", "") // Clear plaintext
+						log.Printf("[wallet] Migrated legacy wallet to encrypted storage")
+					}
+				}
 			}
 		}
 	}
@@ -113,12 +164,18 @@ func (d *Daemon) Start() error {
 		if err != nil {
 			return fmt.Errorf("generate wallet: %w", err)
 		}
-		if err := db.SetConfig("wallet_wif", w.WIF); err != nil {
-			log.Printf("[wallet] WARNING: Failed to persist wallet WIF: %v", err)
+		enc, err := wallet.EncryptWIF(w.WIF, d.walletPassphrase())
+		if err != nil {
+			log.Printf("[wallet] WARNING: Failed to encrypt wallet: %v", err)
+		} else if err := db.SetConfig("wallet_wif_enc", enc); err != nil {
+			log.Printf("[wallet] WARNING: Failed to persist encrypted wallet: %v", err)
 		}
 		d.wallet = w
 		minerAddr = w.Address
 		log.Printf("[wallet] Generated and saved new wallet: %s", minerAddr)
+		d.logWalletAudit("GENERATE", w.Address)
+	} else if d.wallet != nil {
+		d.logWalletAudit("LOAD", d.wallet.Address)
 	}
 
 	// 3.5 Start header sync service
@@ -195,6 +252,9 @@ func (d *Daemon) Start() error {
 					da.RestoreState(target, int64(totalCount), timestamps)
 				}
 			}
+
+			// No artificial difficulty ceiling — difficulty scales with hardware.
+			// The adjuster's minTarget (32 leading zeros) provides the absolute bound.
 
 			log.Printf("[daemon] Restored chain: height=%d, tip=%s, own_blocks=%d, difficulty=%d",
 				tipHeight, tipHash[:min(16, len(tipHash))], ownCount, da.Difficulty())
@@ -384,6 +444,13 @@ func (d *Daemon) Start() error {
 		d.miner.Start()
 		log.Printf("[daemon] Mining service started (address: %s, difficulty: %d, target block time: %v)",
 			minerAddr, d.cfg.Mining.Difficulty, targetBlockTime)
+	}
+
+	// 5.3 Start BSV-20 Token Scanner
+	if d.miner != nil {
+		d.scanner = scanner.New(d.cfg.Scanner, d.miner.SubmitWork)
+		d.scanner.Start()
+		log.Println("[daemon] BSV-20 Token Scanner started")
 	}
 
 	// 5.5 Start Relay Service (SPV Relay Mesh)
@@ -588,6 +655,9 @@ func (d *Daemon) Stop() {
 	if d.gossipNode != nil {
 		d.gossipNode.Stop()
 	}
+	if d.scanner != nil {
+		d.scanner.Stop()
+	}
 	if d.headerSync != nil {
 		d.headerSync.Stop()
 	}
@@ -651,6 +721,47 @@ func (d *Daemon) ContentStatus() map[string]interface{} {
 	return stats
 }
 
+// ScannerStatus returns the BSV-20 scanner progress.
+func (d *Daemon) ScannerStatus() map[string]interface{} {
+	if d.scanner == nil {
+		return map[string]interface{}{"enabled": false}
+	}
+	p := d.scanner.Progress()
+	result := map[string]interface{}{
+		"enabled":         true,
+		"is_running":      p.IsRunning,
+		"total_scanned":   p.TotalScanned,
+		"total_holders":   p.TotalHolders,
+		"total_verified":  p.TotalVerified,
+		"total_disputed":  p.TotalDisputed,
+		"current_offset":  p.CurrentOffset,
+		"tick_count":      p.TickCount,
+	}
+	if !p.LastScanAt.IsZero() {
+		result["last_scan_at"] = p.LastScanAt.Unix()
+	}
+	if !p.LastVerifyAt.IsZero() {
+		result["last_verify_at"] = p.LastVerifyAt.Unix()
+	}
+	if p.LastVerifyTick != "" {
+		result["last_verify_tick"] = p.LastVerifyTick
+	}
+	if p.LastError != "" {
+		result["last_error"] = p.LastError
+	}
+
+	// Include DB-sourced verification breakdown
+	if counts, err := db.GetVerificationCounts(); err == nil {
+		result["verification"] = map[string]interface{}{
+			"indexed":        counts.Indexed,
+			"cross_verified": counts.CrossVerified,
+			"disputed":       counts.Disputed,
+		}
+	}
+
+	return result
+}
+
 func (d *Daemon) HeaderSyncStatus() map[string]interface{} {
 	if d.headerSync == nil {
 		return map[string]interface{}{"enabled": false}
@@ -690,11 +801,17 @@ func (d *Daemon) ImportWallet(wif string) error {
 	if err != nil {
 		return fmt.Errorf("invalid WIF: %w", err)
 	}
-	if err := db.SetConfig("wallet_wif", wif); err != nil {
+	enc, err := wallet.EncryptWIF(wif, d.walletPassphrase())
+	if err != nil {
+		return fmt.Errorf("encrypt wallet: %w", err)
+	}
+	if err := db.SetConfig("wallet_wif_enc", enc); err != nil {
 		return fmt.Errorf("persist wallet: %w", err)
 	}
+	db.SetConfig("wallet_wif", "") // Clear any legacy plaintext
 	d.wallet = w
 	log.Printf("[wallet] Imported wallet: %s", w.Address)
+	d.logWalletAudit("IMPORT", w.Address)
 
 	// Restart balance loop with new wallet address
 	d.restartBalanceLoop()
@@ -707,25 +824,23 @@ func (d *Daemon) ImportWallet(wif string) error {
 	return nil
 }
 
-// ExportWIF returns the current wallet's WIF string.
-func (d *Daemon) ExportWIF() (string, error) {
-	if d.wallet == nil {
-		return "", fmt.Errorf("no wallet loaded")
-	}
-	return d.wallet.WIF, nil
-}
-
 // GenerateNewWallet creates a fresh keypair, persists it, and hot-swaps.
 func (d *Daemon) GenerateNewWallet() error {
 	w, err := wallet.Generate()
 	if err != nil {
 		return fmt.Errorf("generate wallet: %w", err)
 	}
-	if err := db.SetConfig("wallet_wif", w.WIF); err != nil {
+	enc, err := wallet.EncryptWIF(w.WIF, d.walletPassphrase())
+	if err != nil {
+		return fmt.Errorf("encrypt wallet: %w", err)
+	}
+	if err := db.SetConfig("wallet_wif_enc", enc); err != nil {
 		return fmt.Errorf("persist wallet: %w", err)
 	}
+	db.SetConfig("wallet_wif", "") // Clear any legacy plaintext
 	d.wallet = w
 	log.Printf("[wallet] Generated new wallet: %s", w.Address)
+	d.logWalletAudit("GENERATE", w.Address)
 
 	d.restartBalanceLoop()
 
