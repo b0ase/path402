@@ -54,7 +54,11 @@ class ClawMinerService : Service() {
             try {
                 val dataDir = filesDir.absolutePath + "/clawminer"
                 java.io.File(dataDir).mkdirs()
-                Mobile.start("", dataDir)
+
+                // Load config from file, or use defaults
+                val configFile = java.io.File(dataDir, "clawminer.yaml")
+                val configYaml = if (configFile.exists()) configFile.readText() else ""
+                Mobile.start(configYaml, dataDir)
                 Log.i(TAG, "Daemon started in $dataDir")
                 updateNotification("Mining active")
             } catch (e: Exception) {

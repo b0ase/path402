@@ -22,7 +22,7 @@ import * as fs from 'fs'
 import { createMintServer } from './server'
 
 const DEFAULT_TOKEN_ID =
-    '32ae25f861192f286bdbaf28f50b8ac1cd5ec4ff0b23a9831fa821acf91e5d02_0'
+    'ab8a000255ff4797bf3d194a5e9b371f884805dca55754c7216dfb4c70956ef8_0'
 
 function getWifFromDb(): string | null {
     const dbPath = path.join(os.homedir(), '.clawminer', 'clawminer.db')

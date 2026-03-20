@@ -99,9 +99,9 @@ func DefaultConfig() *Config {
 			HeartbeatInterval: 15 * time.Second,
 			MinItems:          5,
 			BatchSize:         10,
-			TokenID:           "32ae25f861192f286bdbaf28f50b8ac1cd5ec4ff0b23a9831fa821acf91e5d02_0",
-			BroadcastMode:     "native",
-			ArcURL:            "https://arc.taal.com",
+			TokenID:           "ab8a000255ff4797bf3d194a5e9b371f884805dca55754c7216dfb4c70956ef8_0",
+			BroadcastMode:     "http",
+			MintEndpoint:      "http://127.0.0.1:8403/mint",
 			TargetBlockTime:   10 * time.Minute, // Same as Bitcoin — forces global competition
 			AdjustmentPeriod:  144,              // ~1 day at 10min blocks
 		},
