@@ -125,6 +125,11 @@ export function createMintServer(config: MintServerConfig): http.Server {
     const dedupCache = new MintDedupCache(60_000) // 60s TTL
     const minerAddress = broadcaster.getMinerAddress()
 
+    // Rate limiter: max 1 mint per RATE_LIMIT_MS per miner_address
+    const RATE_LIMIT_MS = 10 * 60 * 1000 // 10 minutes (matches target block time)
+    const lastMintByAddress = new Map<string, number>()
+    let rateLimitHits = 0
+
     let totalMints = 0
     let lastMintAt: string | null = null
     let dedupHits = 0
@@ -153,6 +158,8 @@ export function createMintServer(config: MintServerConfig): http.Server {
                         miner_address: minerAddress,
                         total_mints: totalMints,
                         dedup_hits: dedupHits,
+                        rate_limit_hits: rateLimitHits,
+                        rate_limit_minutes: RATE_LIMIT_MS / 60000,
                         last_mint_at: lastMintAt,
                     })
                 )
@@ -191,8 +198,29 @@ export function createMintServer(config: MintServerConfig): http.Server {
                 }
 
                 console.log(
-                    `[htm-mint] Mint request: merkle_root=${payload.merkle_root.slice(0, 16)}...`
+                    `[htm-mint] Mint request: merkle_root=${payload.merkle_root.slice(0, 16)}... from=${payload.miner_address || 'unknown'}`
                 )
+
+                // Rate limit: 1 mint per 10 minutes per miner address
+                const reqAddr = payload.miner_address || 'default'
+                const lastMintTime = lastMintByAddress.get(reqAddr) || 0
+                const elapsed = Date.now() - lastMintTime
+                if (elapsed < RATE_LIMIT_MS) {
+                    rateLimitHits++
+                    const waitSec = Math.ceil((RATE_LIMIT_MS - elapsed) / 1000)
+                    console.log(
+                        `[htm-mint] Rate limited ${reqAddr} — ${waitSec}s remaining (${rateLimitHits} total)`
+                    )
+                    res.writeHead(429)
+                    res.end(
+                        JSON.stringify({
+                            success: false,
+                            error: `Rate limited: 1 mint per ${RATE_LIMIT_MS / 60000} minutes. Wait ${waitSec}s.`,
+                            action: 'retry',
+                        } satisfies MintResponse)
+                    )
+                    return
+                }
 
                 // Dedup: return cached result if this merkle root was already processed
                 const cached = dedupCache.get(payload.merkle_root)
@@ -227,6 +255,7 @@ export function createMintServer(config: MintServerConfig): http.Server {
                 if (result.success) {
                     totalMints++
                     lastMintAt = new Date().toISOString()
+                    lastMintByAddress.set(reqAddr, Date.now())
                     console.log(
                         `[htm-mint] Mint #${totalMints} success: txid=${result.txid}`
                     )

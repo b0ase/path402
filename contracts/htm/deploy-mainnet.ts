@@ -35,9 +35,32 @@ import { bsv, TestWallet, toByteString, DefaultProvider } from 'scrypt-ts'
  *     DOUBLE-CHECK ALL PARAMETERS BEFORE RUNNING.
  */
 
-const WIF = process.env.PATHD_WALLET_KEY || process.env.PRIVATE_KEY || ''
+import { execSync } from 'child_process'
+import * as os from 'os'
+import * as path from 'path'
+import * as fs from 'fs'
+
+function resolveWif(): string {
+    // 1. Environment variable
+    if (process.env.PATHD_WALLET_KEY) return process.env.PATHD_WALLET_KEY
+    if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY
+    // 2. ClawMiner database
+    const dbPath = path.join(os.homedir(), '.clawminer', 'clawminer.db')
+    if (fs.existsSync(dbPath)) {
+        try {
+            const result = execSync(
+                `sqlite3 "${dbPath}" "SELECT value FROM config WHERE key = 'wallet_wif' LIMIT 1"`,
+                { encoding: 'utf-8', timeout: 5000 }
+            ).trim()
+            if (result) return result
+        } catch { /* fall through */ }
+    }
+    return ''
+}
+
+const WIF = resolveWif()
 if (!WIF) {
-    console.error('No wallet key. Set PATHD_WALLET_KEY env var.')
+    console.error('No wallet key. Set PATHD_WALLET_KEY or ensure ~/.clawminer/clawminer.db has wallet_wif.')
     process.exit(1)
 }
 
