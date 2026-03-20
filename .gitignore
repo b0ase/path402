@@ -46,3 +46,12 @@ Thumbs.db
 # Package manager locks (use npm for publishing)
 pnpm-lock.yaml
 yarn.lock
+
+# ClawMiner build artifacts
+apps/clawminer/build/
+apps/clawminer/clawminerd
+apps/clawminer/clawminer-tray
+apps/clawminer/run/
+apps/clawminer/provision/apks/
+apps/clawminer/android/gradle/wrapper/Projects.code-workspace
+*.code-workspace
