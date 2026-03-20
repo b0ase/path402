@@ -26,6 +26,12 @@ type ContentOfferObserver func(senderID string, payload *ContentOfferPayload)
 // ContentRequestObserver is called when a CONTENT_REQUEST message is received.
 type ContentRequestObserver func(senderID string, payload *ContentRequestPayload)
 
+// UhrpAdvertiseObserver is called when a UHRP_ADVERTISE message is received.
+type UhrpAdvertiseObserver func(senderID string, payload *UhrpAdvertisePayload)
+
+// UhrpResolveObserver is called when a UHRP_RESOLVE message is received.
+type UhrpResolveObserver func(senderID string, payload *UhrpResolvePayload)
+
 // Handler dispatches incoming gossip messages to the appropriate db operations.
 type Handler struct {
 	nodeID                 string
@@ -35,6 +41,8 @@ type Handler struct {
 	txRequestObserver      TxRequestObserver
 	contentOfferObserver   ContentOfferObserver
 	contentRequestObserver ContentRequestObserver
+	uhrpAdvertiseObserver  UhrpAdvertiseObserver
+	uhrpResolveObserver    UhrpResolveObserver
 }
 
 func NewHandler(nodeID string) *Handler {
@@ -71,6 +79,16 @@ func (h *Handler) SetContentRequestObserver(fn ContentRequestObserver) {
 	h.contentRequestObserver = fn
 }
 
+// SetUhrpAdvertiseObserver registers a callback for UHRP_ADVERTISE messages.
+func (h *Handler) SetUhrpAdvertiseObserver(fn UhrpAdvertiseObserver) {
+	h.uhrpAdvertiseObserver = fn
+}
+
+// SetUhrpResolveObserver registers a callback for UHRP_RESOLVE messages.
+func (h *Handler) SetUhrpResolveObserver(fn UhrpResolveObserver) {
+	h.uhrpResolveObserver = fn
+}
+
 // HandleMessage processes an incoming GossipMessage.
 func (h *Handler) HandleMessage(msg *GossipMessage) {
 	switch msg.Type {
@@ -96,6 +114,12 @@ func (h *Handler) HandleMessage(msg *GossipMessage) {
 		h.handleContentRequest(msg)
 	case MsgPing:
 		h.handlePing(msg)
+	case MsgUhrpAdvertise:
+		h.handleUhrpAdvertise(msg)
+	case MsgUhrpResolve:
+		h.handleUhrpResolve(msg)
+	case MsgUhrpResponse:
+		h.handleUhrpResponse(msg)
 	default:
 		log.Printf("[gossip] Unhandled message type: %s from %s", msg.Type, msg.SenderID)
 	}
@@ -311,4 +335,55 @@ func (h *Handler) handleContentRequest(msg *GossipMessage) {
 func (h *Handler) handlePing(msg *GossipMessage) {
 	// Ping handling — in Phase 1 we just log it
 	log.Printf("[gossip] PING from %s", msg.SenderID)
+}
+
+func (h *Handler) handleUhrpAdvertise(msg *GossipMessage) {
+	var payload UhrpAdvertisePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad UHRP_ADVERTISE payload: %v", err)
+		return
+	}
+
+	hashShort := payload.ContentHash
+	if len(hashShort) > 16 {
+		hashShort = hashShort[:16]
+	}
+	log.Printf("[gossip] UHRP_ADVERTISE: %s... (%d bytes, %s) from %s",
+		hashShort, payload.ContentSize, payload.ContentType, msg.SenderID[:min(16, len(msg.SenderID))])
+
+	// Store in local DB
+	if err := db.InsertUhrpAdvertisement(payload.ContentHash, payload.UhrpURL,
+		payload.ContentType, payload.ContentSize, payload.DownloadURL,
+		payload.Advertiser, payload.Expiry, payload.InscribeTxid); err != nil {
+		log.Printf("[gossip] Failed to store UHRP ad %s: %v", hashShort, err)
+	}
+
+	if h.uhrpAdvertiseObserver != nil {
+		h.uhrpAdvertiseObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleUhrpResolve(msg *GossipMessage) {
+	var payload UhrpResolvePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad UHRP_RESOLVE payload: %v", err)
+		return
+	}
+
+	log.Printf("[gossip] UHRP_RESOLVE: %s from %s", payload.ContentHash[:min(16, len(payload.ContentHash))], msg.SenderID[:min(16, len(msg.SenderID))])
+
+	if h.uhrpResolveObserver != nil {
+		h.uhrpResolveObserver(msg.SenderID, &payload)
+	}
+}
+
+func (h *Handler) handleUhrpResponse(msg *GossipMessage) {
+	var payload UhrpResponsePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		log.Printf("[gossip] Bad UHRP_RESPONSE payload: %v", err)
+		return
+	}
+
+	log.Printf("[gossip] UHRP_RESPONSE: %s → %d URLs from %s",
+		payload.ContentHash[:min(16, len(payload.ContentHash))], len(payload.DownloadURLs), msg.SenderID[:min(16, len(msg.SenderID))])
 }

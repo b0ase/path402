@@ -17,8 +17,10 @@
 /** Easiest possible target (~2 leading hex zeros) */
 const MAX_TARGET_HEX = '00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 
-/** Hardest possible target (16 leading hex zeros) */
-const MIN_TARGET_HEX = '0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff';
+/** Hardest possible target (32 leading hex zeros) — no artificial ceiling.
+ * Difficulty scales to whatever hardware the market produces.
+ * Physical limits (thermodynamics, fabrication) are the natural ceiling. */
+const MIN_TARGET_HEX = '00000000000000000000000000000000ffffffffffffffffffffffffffffffff';
 
 /** Max change per adjustment period (Bitcoin uses 4x) */
 const MAX_ADJUST_FACTOR = 4.0;

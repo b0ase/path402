@@ -285,9 +285,9 @@ func (s *ProofOfIndexingService) mineLoop() {
 		header := CreateBlockTemplate(items, s.lastBlockHash, s.config.MinerAddress, difficulty)
 		log.Printf("[mining] Mining block with %d items. Difficulty: %d", len(items), difficulty)
 
-		// Mine in 1000-iteration bursts, up to 1000 chunks
+		// Mine in 1000-iteration bursts, up to 10000 chunks (10M hashes total)
 		var solution *PoWSolution
-		for chunk := 0; chunk < 1000; chunk++ {
+		for chunk := 0; chunk < 10000; chunk++ {
 			// Use target-based mining when adjuster is active (fine-grained difficulty)
 			if s.difficultyAdjuster != nil {
 				target := s.difficultyAdjuster.Target()

@@ -195,7 +195,7 @@ const dashboardHTML = `<!DOCTYPE html>
       <div class="subtitle">$402 Proof-of-Indexing</div>
     </div>
     <div class="spacer"></div>
-    <span class="header-badge" id="version">v0.2.0</span>
+    <span class="header-badge" id="version">v0.4.0</span>
     <div class="status-pill" id="statusPill">
       <span class="dot"></span>
       <span id="statusText">Mining</span>

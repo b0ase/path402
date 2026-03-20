@@ -9,6 +9,7 @@ const (
 	TopicContent   = "$402/content/v1"
 	TopicBlocks    = "$402/blocks/v1"
 	TopicRelay     = "$402/relay/v1"
+	TopicUhrp      = "$402/uhrp/v1"
 )
 
 // AllTopics returns the list of topics a ClawMiner subscribes to.
@@ -21,6 +22,7 @@ func AllTopics() []string {
 		TopicContent,
 		TopicBlocks,
 		TopicRelay,
+		TopicUhrp,
 	}
 }
 
@@ -41,6 +43,8 @@ func TopicForType(mt MessageType) string {
 		return TopicBlocks
 	case MsgTxRelay, MsgTxRequest, MsgTxResponse:
 		return TopicRelay
+	case MsgUhrpAdvertise, MsgUhrpResolve, MsgUhrpResponse:
+		return TopicUhrp
 	default:
 		return TopicTokens // HELLO, PING, PONG go on the default topic
 	}

@@ -22,6 +22,8 @@ export interface TokenConfig {
   description?: string;      // Optional description
   avatar?: string;           // Optional avatar URL
   website?: string;          // Optional website
+  parentSymbol?: string;     // Parent token symbol (e.g., "$ZERODICE" for "$ZERODICE/$VIDEO_1")
+  parentShareBps?: number;   // Revenue share to parent (basis points, default: 5000 = 50%)
 }
 
 export interface MintedToken {
@@ -60,24 +62,31 @@ export const DEFAULT_ACCESS_RATE = 1;  // 1 token per second
  * The mint inscription contains the token configuration.
  */
 export function generateBSV21Inscription(config: TokenConfig): string {
+  const path402Ext: Record<string, unknown> = {
+    accessRate: config.accessRate,
+    protocol: 'path402',
+    version: '1.1.0',
+  };
+
+  // Parent chain reference — on-chain proof of token hierarchy
+  if (config.parentSymbol) {
+    path402Ext.parent = config.parentSymbol;
+    path402Ext.parentShareBps = config.parentShareBps ?? 5000;
+  }
+
   const inscription = {
     p: 'bsv-21',
     op: 'deploy',
     tick: config.symbol,
     max: config.supply.toString(),
     dec: config.decimals.toString(),
-    // Path402 extensions
-    path402: {
-      accessRate: config.accessRate,
-      protocol: 'path402',
-      version: '1.0.0'
-    },
+    path402: path402Ext,
     metadata: {
       name: config.name,
       description: config.description || `Access token for ${config.name}`,
       avatar: config.avatar,
-      website: config.website
-    }
+      website: config.website,
+    },
   };
 
   return JSON.stringify(inscription);
@@ -128,8 +137,9 @@ export function validateSymbol(symbol: string): { valid: boolean; error?: string
     return { valid: false, error: 'Symbol must be 1-20 characters after $' };
   }
 
-  if (!/^[A-Z0-9_]+$/.test(name)) {
-    return { valid: false, error: 'Symbol must contain only A-Z, 0-9, or _' };
+  // Allow / for child tokens (e.g., $ZERODICE/$VIDEO_1)
+  if (!/^[A-Z0-9_]+(\/\$?[A-Z0-9_\-]+)*$/.test(name)) {
+    return { valid: false, error: 'Symbol must contain only A-Z, 0-9, _, or / for child paths' };
   }
 
   // Reserved symbols
@@ -144,13 +154,15 @@ export function validateSymbol(symbol: string): { valid: boolean; error?: string
 // ── Token Minting ───────────────────────────────────────────────────
 
 export interface MintRequest {
-  symbol: string;            // e.g., "$RICHARD"
+  symbol: string;            // e.g., "$RICHARD" or "$ZERODICE/$VIDEO_1"
   issuerAddress: string;     // BSV address
   issuerPrivateKey?: string; // For signing (optional, can sign client-side)
   description?: string;
   avatar?: string;
   website?: string;
   accessRate?: number;       // Tokens per second (default: 1)
+  parentSymbol?: string;     // Parent token (e.g., "$ZERODICE") for child tokens
+  parentShareBps?: number;   // Revenue share to parent (default: 5000 = 50%)
 }
 
 export interface MintResult {
@@ -181,7 +193,9 @@ export function prepareMint(request: MintRequest): MintResult {
     accessRate: request.accessRate || DEFAULT_ACCESS_RATE,
     description: request.description,
     avatar: request.avatar,
-    website: request.website
+    website: request.website,
+    parentSymbol: request.parentSymbol,
+    parentShareBps: request.parentShareBps,
   };
 
   // Generate inscription

@@ -2,11 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/b0ase/path402/apps/clawminer/internal/db"
+	"github.com/b0ase/path402/apps/clawminer/internal/uhrp"
 )
 
 // handleContentCreate stores new content via multipart form or raw body.
@@ -230,9 +232,24 @@ func (s *Server) handleContentAnnounce(w http.ResponseWriter, r *http.Request) {
 
 	s.contentAnnouncer(item.TokenID, item.ContentHash, item.ContentSize, item.ContentType, priceSats, serverAddr)
 
+	// Also create UHRP advertisement for content discoverability
+	var uhrpURL string
+	ad := uhrp.BuildAdvertisement(item.ContentHash, item.ContentType, item.ContentSize,
+		fmt.Sprintf("http://%s:%d/api/content/%s", s.bind, s.port, item.ContentHash),
+		serverAddr, 0)
+	uhrpURL = ad.UhrpURL
+	_ = db.InsertUhrpAdvertisement(ad.ContentHash, ad.UhrpURL, ad.ContentType, ad.ContentSize,
+		ad.DownloadURL, ad.Advertiser, ad.Expiry, ad.InscribeTxid)
+
+	// Broadcast UHRP_ADVERTISE on gossip if announcer is wired
+	if s.uhrpAnnouncer != nil {
+		s.uhrpAnnouncer(ad.ContentHash, ad.UhrpURL, ad.ContentType, ad.ContentSize, ad.DownloadURL, ad.Advertiser)
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"announced":    true,
 		"content_hash": hash,
+		"uhrp_url":     uhrpURL,
 		"price_sats":   priceSats,
 		"server_addr":  serverAddr,
 	})

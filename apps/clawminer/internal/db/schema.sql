@@ -315,6 +315,25 @@ CREATE INDEX IF NOT EXISTS idx_poi_blocks_miner ON poi_blocks(miner_address);
 CREATE INDEX IF NOT EXISTS idx_poi_blocks_own ON poi_blocks(is_own) WHERE is_own = 1;
 CREATE INDEX IF NOT EXISTS idx_poi_blocks_time ON poi_blocks(timestamp);
 
+-- ══════════════════════════════════════════════════════════════════
+-- UHRP_ADVERTISEMENTS - BRC-26 content advertisements
+-- ══════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS uhrp_advertisements (
+  content_hash TEXT PRIMARY KEY,
+  uhrp_url TEXT NOT NULL,
+  content_type TEXT,
+  content_size INTEGER DEFAULT 0,
+  download_url TEXT NOT NULL,
+  advertiser TEXT NOT NULL,
+  expiry INTEGER DEFAULT 0,
+  inscription_txid TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_uhrp_ads_url ON uhrp_advertisements(uhrp_url);
+CREATE INDEX IF NOT EXISTS idx_uhrp_ads_advertiser ON uhrp_advertisements(advertiser);
+
 -- Default config
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('node_id', lower(hex(randomblob(16)))),

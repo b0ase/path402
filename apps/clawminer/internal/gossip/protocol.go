@@ -41,6 +41,9 @@ const (
 	MsgTxResponse      MessageType = "TX_RESPONSE"
 	MsgPing            MessageType = "PING"
 	MsgPong            MessageType = "PONG"
+	MsgUhrpAdvertise   MessageType = "UHRP_ADVERTISE"
+	MsgUhrpResolve     MessageType = "UHRP_RESOLVE"
+	MsgUhrpResponse    MessageType = "UHRP_RESPONSE"
 )
 
 var validTypes = map[MessageType]bool{
@@ -53,6 +56,7 @@ var validTypes = map[MessageType]bool{
 	MsgBlockAnnounce: true,
 	MsgTxRelay: true, MsgTxRequest: true, MsgTxResponse: true,
 	MsgPing: true, MsgPong: true,
+	MsgUhrpAdvertise: true, MsgUhrpResolve: true, MsgUhrpResponse: true,
 }
 
 // GossipMessage is the envelope for all gossip communication.
@@ -197,6 +201,30 @@ type ContentRequestPayload struct {
 	PaymentTxid      string `json:"payment_txid,omitempty"`
 }
 
+// UHRP Payloads — BRC-26 Universal Hash Resolution Protocol
+
+type UhrpAdvertisePayload struct {
+	ContentHash  string `json:"content_hash"`
+	UhrpURL      string `json:"uhrp_url"`
+	ContentType  string `json:"content_type,omitempty"`
+	ContentSize  int    `json:"content_size"`
+	DownloadURL  string `json:"download_url"`
+	Advertiser   string `json:"advertiser"`
+	Expiry       int64  `json:"expiry,omitempty"`
+	InscribeTxid string `json:"inscription_txid,omitempty"`
+}
+
+type UhrpResolvePayload struct {
+	ContentHash string `json:"content_hash"`
+	UhrpURL     string `json:"uhrp_url"`
+}
+
+type UhrpResponsePayload struct {
+	ContentHash  string   `json:"content_hash"`
+	UhrpURL      string   `json:"uhrp_url"`
+	DownloadURLs []string `json:"download_urls"`
+}
+
 type PingPayload struct {
 	Timestamp int64  `json:"timestamp"`
 	Nonce     string `json:"nonce"`
@@ -308,6 +336,25 @@ func NewTxResponse(nodeID, txid, rawHex string, confirmed bool, blockHash string
 		RawHex:    rawHex,
 		Confirmed: confirmed,
 		BlockHash: blockHash,
+	}, MessageTTL)
+}
+
+func NewUhrpAdvertise(nodeID string, ad *UhrpAdvertisePayload) (*GossipMessage, error) {
+	return newMessage(MsgUhrpAdvertise, nodeID, ad, MessageTTL)
+}
+
+func NewUhrpResolve(nodeID, contentHash, uhrpURL string) (*GossipMessage, error) {
+	return newMessage(MsgUhrpResolve, nodeID, &UhrpResolvePayload{
+		ContentHash: contentHash,
+		UhrpURL:     uhrpURL,
+	}, MessageTTL)
+}
+
+func NewUhrpResponse(nodeID, contentHash, uhrpURL string, downloadURLs []string) (*GossipMessage, error) {
+	return newMessage(MsgUhrpResponse, nodeID, &UhrpResponsePayload{
+		ContentHash:  contentHash,
+		UhrpURL:      uhrpURL,
+		DownloadURLs: downloadURLs,
 	}, MessageTTL)
 }
 

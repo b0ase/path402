@@ -34,9 +34,10 @@ const (
 	// Network difficulty can never drop below this.
 	maxTargetHex = "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
-	// minTargetHex is the hardest possible target (16 leading hex zeros).
-	// Even massive mining farms won't push past this.
-	minTargetHex = "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+	// minTargetHex is the hardest possible target (32 leading hex zeros).
+	// No artificial ceiling — difficulty scales to whatever hardware the market produces.
+	// Physical limits (thermodynamics, fabrication) are the natural ceiling.
+	minTargetHex = "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
 
 	// maxAdjustFactor caps how much difficulty can change in one period.
 	// Bitcoin uses 4x — we match that.

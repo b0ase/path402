@@ -75,3 +75,103 @@ func UpdateTokenSupply(tokenID string, supply int) error {
 		supply, time.Now().Unix(), tokenID)
 	return err
 }
+
+// UpsertBSV20Token inserts or updates a BSV-20 token from the GorillaPool indexer.
+// Returns true if the row was inserted or changed.
+func UpsertBSV20Token(tick, txid string, supply, max int, fundAddress string) (bool, error) {
+	res, err := db.Exec(`
+		INSERT INTO tokens (token_id, name, current_supply, max_supply, issuer_address,
+			verification_status, discovered_via, last_verified_at)
+		VALUES (?, ?, ?, ?, ?, 'indexed', 'gorillapool', unixepoch())
+		ON CONFLICT(token_id) DO UPDATE SET
+			current_supply = excluded.current_supply,
+			max_supply = excluded.max_supply,
+			last_verified_at = unixepoch()
+		WHERE current_supply != excluded.current_supply OR max_supply != excluded.max_supply`,
+		txid, tick, supply, max, fundAddress)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// GetNextTokenForHolderScan returns the token with the oldest last_verified_at value.
+func GetNextTokenForHolderScan() (*Token, error) {
+	t := &Token{}
+	err := db.QueryRow(`
+		SELECT token_id, name, current_supply, max_supply, verification_status, discovered_at
+		FROM tokens
+		WHERE verification_status = 'indexed'
+		ORDER BY last_verified_at ASC NULLS FIRST
+		LIMIT 1`).Scan(
+		&t.TokenID, &t.Name, &t.CurrentSupply, &t.MaxSupply, &t.VerificationStatus, &t.DiscoveredAt)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// GetTokenCount returns the total number of tokens in the database.
+func GetTokenCount() (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&count)
+	return count, err
+}
+
+// GetNextTokenForVerification returns the oldest token with status 'indexed' for cross-verification.
+func GetNextTokenForVerification() (*Token, error) {
+	t := &Token{}
+	err := db.QueryRow(`
+		SELECT token_id, name, current_supply, max_supply, verification_status, discovered_at
+		FROM tokens
+		WHERE verification_status = 'indexed'
+		ORDER BY last_verified_at ASC NULLS FIRST
+		LIMIT 1`).Scan(
+		&t.TokenID, &t.Name, &t.CurrentSupply, &t.MaxSupply, &t.VerificationStatus, &t.DiscoveredAt)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// UpdateVerificationStatus sets a token's verification status and updates last_verified_at.
+func UpdateVerificationStatus(tokenID, status string) error {
+	_, err := db.Exec(`UPDATE tokens SET verification_status = ?, last_verified_at = unixepoch() WHERE token_id = ?`,
+		status, tokenID)
+	return err
+}
+
+// VerificationCounts holds the count of tokens in each verification status.
+type VerificationCounts struct {
+	Indexed       int `json:"indexed"`
+	CrossVerified int `json:"cross_verified"`
+	Disputed      int `json:"disputed"`
+}
+
+// GetVerificationCounts returns counts of tokens grouped by verification_status.
+func GetVerificationCounts() (*VerificationCounts, error) {
+	rows, err := db.Query(`SELECT verification_status, COUNT(*) FROM tokens GROUP BY verification_status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := &VerificationCounts{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		switch status {
+		case "indexed":
+			counts.Indexed = count
+		case "cross-verified":
+			counts.CrossVerified = count
+		case "disputed":
+			counts.Disputed = count
+		}
+	}
+	return counts, nil
+}

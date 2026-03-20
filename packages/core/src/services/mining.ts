@@ -66,6 +66,8 @@ export class ProofOfIndexingService extends EventEmitter {
     private difficultyAdjuster: DifficultyAdjuster;
     private blocksMined: number = 0;
     private blockHeight: number = 0;
+    private totalHashes: number = 0;
+    private startTime: number = Date.now();
     private noDb: boolean;
 
     constructor(options: ProofOfIndexingOptions) {
@@ -296,12 +298,15 @@ export class ProofOfIndexingService extends EventEmitter {
 
                     console.log(`[PoI] Mining block with ${items.length} items. Difficulty: ${difficulty}`);
 
-                    // 3. Mine in chunks using target-based mining
+                    // 3. Mine in chunks using target-based mining (10M hashes total)
                     const target = this.difficultyAdjuster.target;
                     let solution: PoWSolution | null = null;
-                    for (let chunk = 0; chunk < 1000; chunk++) {
+                    for (let chunk = 0; chunk < 10000; chunk++) {
                         solution = await this.mineAsync(header, target);
+                        this.totalHashes += 1000;
                         if (solution) break;
+                        // Yield every 100 chunks to keep event loop responsive
+                        if (chunk % 100 === 0) await new Promise(r => setTimeout(r, 1));
                     }
 
                     if (solution) {
@@ -418,6 +423,7 @@ export class ProofOfIndexingService extends EventEmitter {
 
     /** Mining status for API responses */
     status(): Record<string, unknown> {
+        const elapsed = (Date.now() - this.startTime) / 1000;
         return {
             blocks_mined: this.blocksMined,
             block_height: this.blockHeight,
@@ -427,6 +433,7 @@ export class ProofOfIndexingService extends EventEmitter {
             last_block: this.lastBlockHash.slice(0, 16),
             miner_address: this.minerAddress,
             difficulty: this.difficultyAdjuster.difficulty(),
+            hash_rate: elapsed > 0 ? this.totalHashes / elapsed : 0,
             network: this.difficultyAdjuster.stats(),
         };
     }

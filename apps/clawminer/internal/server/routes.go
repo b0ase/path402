@@ -27,6 +27,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/blocks/count", s.handleBlockCount)
 	mux.HandleFunc("GET /api/wallet/balance", s.handleWalletBalance)
 	mux.HandleFunc("GET /api/blocks/{hash}", s.handleBlockByHash)
+	mux.HandleFunc("GET /api/scanner/status", s.handleScannerStatus)
 
 	// Content Engine routes
 	mux.HandleFunc("POST /api/content", s.handleContentCreate)
@@ -36,6 +37,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/content/{hash}", s.handleContentGet)
 	mux.HandleFunc("DELETE /api/content/{hash}", s.handleContentDelete)
 	mux.HandleFunc("POST /api/content/{hash}/announce", s.handleContentAnnounce)
+
+	// UHRP (BRC-26) routes
+	mux.HandleFunc("GET /api/uhrp/resolve/{hash}", s.handleUhrpResolve)
+	mux.HandleFunc("POST /api/uhrp/advertise", s.handleUhrpAdvertise)
+	mux.HandleFunc("GET /api/uhrp/advertisements", s.handleUhrpList)
 
 	// SPV Relay Mesh routes
 	if s.relaySvc != nil {
@@ -57,7 +63,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"status":    "ok",
-		"version":   "0.1.0",
+		"version":   "0.4.0",
 		"node_id":   s.daemon.NodeID()[:16],
 		"uptime_ms": s.daemon.Uptime().Milliseconds(),
 		"peers":     s.daemon.PeerCount(),
@@ -92,6 +98,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"mining":  s.daemon.MiningStatus(),
 		"wallet":  s.daemon.WalletStatus(),
 		"headers": s.daemon.HeaderSyncStatus(),
+		"scanner": s.daemon.ScannerStatus(),
 	}
 
 	if portfolio != nil {
@@ -254,4 +261,8 @@ func (s *Server) handleBlockByHash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, block)
+}
+
+func (s *Server) handleScannerStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.daemon.ScannerStatus())
 }

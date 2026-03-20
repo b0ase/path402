@@ -21,6 +21,7 @@ type DaemonInfo interface {
 	MiningStatus() map[string]interface{}
 	WalletStatus() map[string]interface{}
 	HeaderSyncStatus() map[string]interface{}
+	ScannerStatus() map[string]interface{}
 	ValidateMerkleRoot(root string, height int) (bool, error)
 	PauseMining()
 	ResumeMining()
@@ -44,6 +45,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 // ContentAnnouncer broadcasts a CONTENT_OFFER to the gossip network.
 type ContentAnnouncer func(tokenID, contentHash string, contentSize int, contentType string, priceSats int, serverAddress string)
 
+// UhrpAnnouncer broadcasts a UHRP_ADVERTISE message to the gossip network.
+type UhrpAnnouncer func(contentHash, uhrpURL, contentType string, contentSize int, downloadURL, advertiser string)
+
 // Server is the HTTP JSON API for the ClawMiner daemon.
 type Server struct {
 	httpSrv           *http.Server
@@ -51,6 +55,7 @@ type Server struct {
 	relaySvc          *relay.Service
 	contentStore      *content.Store
 	contentAnnouncer  ContentAnnouncer
+	uhrpAnnouncer     UhrpAnnouncer
 	bind              string
 	port              int
 }
@@ -83,6 +88,11 @@ func (s *Server) SetContentStore(store *content.Store) {
 // SetContentAnnouncer sets the callback for broadcasting content offers.
 func (s *Server) SetContentAnnouncer(fn ContentAnnouncer) {
 	s.contentAnnouncer = fn
+}
+
+// SetUhrpAnnouncer sets the callback for broadcasting UHRP advertisements.
+func (s *Server) SetUhrpAnnouncer(fn UhrpAnnouncer) {
+	s.uhrpAnnouncer = fn
 }
 
 // Start pre-acquires the port and begins serving HTTP requests.
