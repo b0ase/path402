@@ -73,7 +73,7 @@ export function createBlockTemplate(
         version: 1,
         prevHash,
         merkleRoot: calculateMerkleRoot(items),
-        timestamp: Date.now(),
+        timestamp: 0,  // Let the miner set timestamp fresh on each attempt
         bits: difficulty,
         nonce: 0,
         minerAddress
