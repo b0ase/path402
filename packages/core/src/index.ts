@@ -116,6 +116,8 @@ export type {
 // Mining exports
 export { ProofOfIndexingService } from "./services/mining.js";
 export type { MintBroadcaster, MintBroadcasterResult } from "./mining/broadcaster.js";
+export { MiningBridge } from "./mining/bridge.js";
+export type { WorkType, WorkItem, MempoolStatus } from "./mining/bridge.js";
 
 // DNS Verification exports
 export { verifyDomainDns, generateVerificationCode, resolvePaymentAddress } from "./services/dns.js";
@@ -167,9 +169,31 @@ export type { ContentType, Series, Character, Story, Script, ScriptSegment, Gene
 
 // ── Global Services ─────────────────────────────────────────────
 import { ProofOfIndexingService } from "./services/mining.js";
+import { MiningBridge } from "./mining/bridge.js";
+import { createHash } from "crypto";
 
 // Global mining service instantiation removed to prevent side-effects in browser imports.
 // The Agent provided in ./client/agent.ts will manage the mining service.
+
+// ── Mining Bridge (connects agent actions → Go daemon mempool) ──
+// Singleton: created lazily on first use. Daemon URL configurable via env.
+let _miningBridge: MiningBridge | null = null;
+
+function getMiningBridge(): MiningBridge {
+  if (!_miningBridge) {
+    const url = process.env.CLAWMINER_DAEMON_URL || "http://127.0.0.1:8402";
+    _miningBridge = new MiningBridge(url);
+  }
+  return _miningBridge;
+}
+
+/** Hash arbitrary data and submit to the mining mempool. Best-effort, never throws. */
+function submitAgentWork(type: string, data: string, metadata?: Record<string, unknown>): void {
+  try {
+    const hash = createHash("sha256").update(data).digest("hex");
+    getMiningBridge().submitWork(type as any, hash, metadata).catch(() => {});
+  } catch { /* best-effort */ }
+}
 
 
 // ── Server Init ─────────────────────────────────────────────────
@@ -307,6 +331,12 @@ Returns:
         lines.push(`**Expected ROI:** ${decision.expectedROI}%`);
       }
 
+      // Submit evaluation to mining mempool
+      submitAgentWork("evaluation", JSON.stringify(decision), {
+        dollarAddress: decision.dollarAddress,
+        recommendation: decision.recommendation,
+      });
+
       return {
         content: [{ type: "text", text: lines.join("\n") }],
         structuredContent: decision
@@ -433,6 +463,13 @@ Returns:
         totalCost: token.pricePaid,
         newBalance: wallet.balance
       };
+
+      // Submit acquisition to mining mempool
+      submitAgentWork("acquisition", JSON.stringify(output), {
+        dollarAddress: response.dollarAddress,
+        pricePaid: token.pricePaid,
+        tokenId: token.id,
+      });
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -729,6 +766,13 @@ Returns:
         `**Total Revenue from This Token:** ${history.reduce((sum, e) => sum + e.revenueEarned, 0)} SAT`,
         `**New Wallet Balance:** ${wallet.balance} SAT`
       ];
+
+      // Submit serve event to mining mempool
+      submitAgentWork("serve", JSON.stringify(event), {
+        dollarAddress,
+        revenueEarned: event.revenueEarned,
+        serveId: event.id,
+      });
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -1407,6 +1451,16 @@ Returns:
           `   Cost: ${step.costSats} SAT | Time: ${step.durationMs}ms`,
           step.outputUrl ? `   Output: ${step.outputUrl}` : `   Output: ${step.output.slice(0, 120)}`,
         );
+      }
+
+      // Submit each step of the chain to the mining mempool
+      for (const step of result.steps) {
+        submitAgentWork("generation", JSON.stringify(step), {
+          agentName: step.agentName,
+          action: step.action,
+          costSats: step.costSats,
+          durationMs: step.durationMs,
+        });
       }
 
       return {

@@ -19,15 +19,25 @@ import {
   deleteContentCache,
   getContentCacheStats
 } from '../db/index.js';
+import type { MiningBridge } from '../mining/bridge.js';
 
 export class FsContentStore implements ContentStore {
   private baseDir: string;
+  private miningBridge: MiningBridge | null = null;
 
   constructor(dataDir?: string) {
     this.baseDir = join(dataDir || join(homedir(), '.pathd'), 'content');
     if (!existsSync(this.baseDir)) {
       mkdirSync(this.baseDir, { recursive: true, mode: 0o700 });
     }
+  }
+
+  /**
+   * Attach a MiningBridge so that every put() also submits the content hash
+   * as a work item to the ClawMiner daemon's mempool.
+   */
+  setMiningBridge(bridge: MiningBridge): void {
+    this.miningBridge = bridge;
   }
 
   private hashPath(hash: string): string {
@@ -53,6 +63,17 @@ export class FsContentStore implements ContentStore {
       content_path: filePath,
       price_paid_sats: pricePaidSats
     });
+
+    // Submit content hash as work to the ClawMiner daemon mempool
+    if (this.miningBridge) {
+      this.miningBridge.submitWork('content', hash, {
+        contentType,
+        size: data.length,
+        tokenId,
+      }).catch(() => {
+        // Mining is best-effort; don't let it disrupt content storage
+      });
+    }
 
     return hash;
   }
