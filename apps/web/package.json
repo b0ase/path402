@@ -14,6 +14,7 @@
   "dependencies": {
     "@b0ase/path402-core": "workspace:*",
     "@b0ase/path402-ui": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "@tanstack/react-query": "^5.60.0",
     "framer-motion": "^12.31.1",
     "next": "^15.0.0",

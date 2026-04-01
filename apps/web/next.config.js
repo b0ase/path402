@@ -4,6 +4,14 @@ const nextConfig = {
     unoptimized: true
   },
   trailingSlash: true,
+  async rewrites() {
+    return [
+      {
+        source: '/mcp',
+        destination: '/api/mcp',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

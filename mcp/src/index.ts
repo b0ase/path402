@@ -9,6 +9,17 @@
 // Re-export everything from core's MCP server
 export * from '@b0ase/path402-core';
 
+/**
+ * Smithery sandbox server for capability scanning.
+ * Returns a server instance with safe defaults — no real credentials needed.
+ */
+export function createSandboxServer() {
+  // server is already created as a singleton with all tools registered
+  // just re-export it — the tools don't require auth to be listed
+  const { server } = require('@b0ase/path402-core');
+  return server;
+}
+
 // If run directly, start the MCP server
 import('@b0ase/path402-core/mcp' as any).then(mcp => {
   if (mcp.runServer) {
