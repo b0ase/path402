@@ -1,0 +1,27 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      apiUrl:
+        type: string
+        description: "Base URL of the Path402 API server"
+        default: "https://path402.com"
+      defaultBudget:
+        type: string
+        description: "Default spending budget in satoshis for token acquisitions"
+        default: "10000"
+      walletWif:
+        type: string
+        description: "BSV wallet private key (WIF) for on-chain acquisitions"
+  commandFunction:
+    |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'path402'],
+      env: {
+        PATH402_API_URL: config.apiUrl || 'https://path402.com',
+        PATH402_DEFAULT_BUDGET: config.defaultBudget || '10000',
+        ...(config.walletWif ? { PATH402_WALLET_WIF: config.walletWif } : {})
+      }
+    })
